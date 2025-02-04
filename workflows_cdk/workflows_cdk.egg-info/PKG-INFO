@@ -1,0 +1,30 @@
+Metadata-Version: 2.2
+Name: workflows-cdk
+Version: 0.0.1
+Summary: A CDK for developing Stacksync Workflows Connectors
+Author: Stacksync
+Author-email: oliviero@stacksync.com
+License: MIT
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3.7
+Requires-Python: >=3.7
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: bson>=0.5.10
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0; extra == "dev"
+Requires-Dist: twine>=4.0.2; extra == "dev"
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: license
+Dynamic: provides-extra
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
+Workflows Connector Development Kit
+
+This project is a CDK for developing Stacksync Workflows Connectors.

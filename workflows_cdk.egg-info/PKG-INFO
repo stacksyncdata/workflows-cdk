@@ -1,0 +1,53 @@
+Metadata-Version: 2.2
+Name: workflows-cdk
+Version: 0.0.1
+Summary: A CDK for developing Stacksync Workflows Connectors
+Author: Stacksync
+Author-email: oliviero@stacksync.com
+License: Stacksync Connector License
+Project-URL: Bug Reports, https://github.com/stacksync/workflows-cdk/issues
+Project-URL: Source, https://github.com/stacksync/workflows-cdk
+Project-URL: Documentation, https://workflows-cdk.readthedocs.io/
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: License :: Stacksync Connector License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.7
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Requires-Python: >=3.7
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: flask>=2.0.0
+Requires-Dist: pydantic>=2.0.0
+Requires-Dist: typing-extensions>=4.0.0
+Requires-Dist: python-dotenv>=0.19.0
+Requires-Dist: gunicorn>=20.1.0
+Requires-Dist: requests>=2.26.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0; extra == "dev"
+Requires-Dist: pytest-cov>=2.12.0; extra == "dev"
+Requires-Dist: black>=22.0.0; extra == "dev"
+Requires-Dist: isort>=5.0.0; extra == "dev"
+Requires-Dist: mypy>=0.900; extra == "dev"
+Requires-Dist: flake8>=4.0.0; extra == "dev"
+Requires-Dist: twine>=4.0.2; extra == "dev"
+Provides-Extra: docs
+Requires-Dist: sphinx>=4.0.0; extra == "docs"
+Requires-Dist: sphinx-rtd-theme>=1.0.0; extra == "docs"
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: license
+Dynamic: project-url
+Dynamic: provides-extra
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
+Workflows Connector Development Kit
+
+This project is a CDK for developing Stacksync Workflows Connectors.
