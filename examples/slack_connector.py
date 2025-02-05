@@ -10,12 +10,28 @@ from dotenv import load_dotenv
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
-from workflows_cdk.core import (
-    BaseConnector,
-    ConnectorConfig,
-    SchemaField,
-    SchemaFieldType,
-)
+from workflows_cdk.src.core.connector import BaseConnector
+from workflows_cdk.src.core.types import ConnectorConfig, SchemaFieldType, SchemaField
+from pydantic import BaseModel, Field
+
+
+# Load environment variables
+load_dotenv()
+
+# Get configuration from environment
+HOST = os.getenv("HOST", "0.0.0.0")
+PORT = int(os.getenv("PORT", "5001"))
+DEBUG = os.getenv("DEBUG", "True").lower() == "true"
+
+
+class SlackField(BaseModel):
+    """Schema field for Slack connector."""
+    type: SchemaFieldType = Field(..., description="Field type")
+    label: str = Field(..., description="Human-readable label")
+    description: str = Field(None, description="Field description")
+    required: bool = Field(default=False, description="Whether the field is required")
+    default: Any = Field(default=None, description="Default value")
+    options: List[Dict[str, str]] = Field(default=None, description="Options for select fields")
 
 
 class SlackConnector(BaseConnector):
@@ -23,11 +39,12 @@ class SlackConnector(BaseConnector):
     
     def setup(self) -> None:
         """Set up the Slack connector."""
-        # Load environment variables
-        load_dotenv()
-        
         # Initialize Slack client
-        self.client = WebClient(token=os.getenv("SLACK_BOT_TOKEN"))
+        token = os.getenv("SLACK_BOT_TOKEN")
+        if not token:
+            raise ValueError("SLACK_BOT_TOKEN environment variable is required")
+            
+        self.client = WebClient(token=token)
         
         # Register schema
         self.schema_manager.register_schema(
@@ -142,8 +159,8 @@ def main():
         auth_type="bot_token"
     )
     
-    connector = SlackConnector(config)
-    connector.run(debug=True)
+    connector = SlackConnector(config, host=HOST, port=PORT)
+    connector.run(debug=DEBUG)
 
 
 if __name__ == "__main__":

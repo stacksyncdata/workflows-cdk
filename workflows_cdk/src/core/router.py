@@ -1,148 +1,220 @@
 """
-Router system for Stacksync Workflows CDK.
-Handles endpoint routing, request validation, and response formatting.
+Unified router system for Stacksync Workflows CDK.
+Handles versioned endpoints, request validation, and response formatting.
 """
 
-from typing import Any, Callable, Dict, Optional, Type, Union, Tuple
-from functools import wraps
 import logging
-from datetime import datetime
+import time
 import uuid
+from datetime import datetime
+from functools import wraps
+from typing import Any, Callable, Dict, List, Optional, Type, Union
 
-from flask import Flask, request, jsonify, Response
-from pydantic import ValidationError
+from flask import Flask, jsonify, request
+from pydantic import BaseModel, ValidationError
 
-from .types import (
-    ConnectorResponse,
-    SchemaResponse,
-    ExecuteResponse,
-    ContentResponse,
-    ConnectorConfig,
-)
-from .schema import SchemaManager
+from .errors import ManagedError
+from .request import Request
+from .responses import Response
 
 
 logger = logging.getLogger(__name__)
 
 
-def handle_errors(func: Callable) -> Callable:
-    """Decorator for handling endpoint errors."""
-    @wraps(func)
-    def wrapper(*args, **kwargs) -> Response:
-        try:
-            result = func(*args, **kwargs)
-            return jsonify(result.dict())
-        except ValidationError as e:
-            logger.error(f"Validation error: {str(e)}")
-            return jsonify({
-                "status": "error",
-                "error": "Validation error",
-                "message": str(e)
-            }), 400
-        except Exception as e:
-            logger.exception("Unexpected error")
-            return jsonify({
-                "status": "error",
-                "error": "Internal server error",
-                "message": str(e)
-            }), 500
-    return wrapper
+def create_route_url(base_path: str, endpoint: str, version: str) -> str:
+    """Create a versioned URL for an endpoint."""
+    return f"/{base_path.strip('/')}/{endpoint}/{version}"
 
 
-class ConnectorRouter:
-    """Router for handling connector endpoints."""
+class ModuleRouter:
+    """Router supporting versioned endpoints and module functionality."""
     
     def __init__(
         self,
-        config: ConnectorConfig,
-        schema_manager: SchemaManager,
-        app: Optional[Flask] = None
+        app: Optional[Flask] = None,
+        base_path: str = "",
+        module_id: Optional[str] = None,
+        module_config: Optional[Dict[str, Any]] = None
     ):
         """Initialize the router.
         
         Args:
-            config: Connector configuration
-            schema_manager: Schema manager instance
             app: Optional Flask app instance
+            base_path: Base path for all routes
+            module_id: Optional module identifier
+            module_config: Optional module configuration
         """
-        self.config = config
-        self.schema_manager = schema_manager
         self.app = app or Flask(__name__)
-        self._setup_routes()
+        self.base_path = base_path.strip("/")
+        self.module_id = module_id or str(uuid.uuid4())
+        self.module_config = module_config or {}
+        self.routes: Dict[str, Dict[str, Callable]] = {}
         
-    def _setup_routes(self) -> None:
-        """Set up default routes."""
-        
+        # Setup basic routes
+        self._setup_health_check()
+        self._setup_module_info()
+    
+    def _setup_health_check(self) -> None:
+        """Set up the health check endpoint."""
         @self.app.route("/health", methods=["GET"])
-        def health_check() -> Response:
-            """Health check endpoint."""
+        def health_check():
             return jsonify({
                 "status": "success",
-                "message": "Service is healthy",
+                "message": "Module is healthy",
                 "timestamp": datetime.utcnow().isoformat(),
-                "version": self.config.version
+                "module_id": self.module_id,
+                "module_version": self.module_config.get("MODULE_VERSION", "unknown")
             })
-            
-        @self.app.route("/schema", methods=["GET"])
-        @handle_errors
-        def get_schema() -> SchemaResponse:
-            """Get schema endpoint."""
-            version = request.args.get("version")
-            return self.schema_manager.get_schema(version)
-            
-    def register_execute_handler(
+    
+    def _setup_module_info(self) -> None:
+        """Set up the module info endpoint."""
+        @self.app.route("/info", methods=["GET"])
+        def module_info():
+            return jsonify({
+                "status": "success",
+                "data": {
+                    "id": self.module_id,
+                    "name": self.module_config.get("MODULE_NAME", "Unknown Module"),
+                    "description": self.module_config.get("MODULE_DESCRIPTION", ""),
+                    "version": self.module_config.get("MODULE_VERSION", "unknown"),
+                    "author": self.module_config.get("MODULE_AUTHOR", "unknown"),
+                    "routes": self._get_registered_routes()
+                }
+            })
+    
+    def _get_registered_routes(self) -> Dict[str, Any]:
+        """Get information about registered routes."""
+        routes = {}
+        for version, endpoints in self.routes.items():
+            routes[version] = {
+                name: {
+                    "methods": getattr(handler, "methods", ["GET"]),
+                    "category": getattr(handler, "category", "unknown"),
+                    "description": handler.__doc__ or "No description available"
+                }
+                for name, handler in endpoints.items()
+            }
+        return routes
+    
+    def route(
         self,
-        handler: Callable[[Dict[str, Any]], Dict[str, Any]]
-    ) -> None:
-        """Register execute endpoint handler.
+        endpoint: str,
+        versions: List[str],
+        methods: List[str] = ["POST"],
+        category: str = "action",
+        request_model: Optional[Type[BaseModel]] = None,
+        response_model: Optional[Type[BaseModel]] = None
+    ) -> Callable:
+        """Decorator to register a route with versions.
         
         Args:
-            handler: Function that processes execute requests
+            endpoint: Endpoint name (used in URL)
+            versions: List of supported versions
+            methods: HTTP methods to support
+            category: Route category (action/trigger/info)
+            request_model: Optional Pydantic model for request validation
+            response_model: Optional Pydantic model for response validation
         """
-        @self.app.route("/execute", methods=["POST"])
-        @handle_errors
-        def execute() -> ExecuteResponse:
-            data = request.get_json()
-            version = data.pop("version", None)
+        def decorator(handler: Callable) -> Callable:
+            for version in versions:
+                url = create_route_url(self.base_path, endpoint, version)
+                
+                @self.app.route(url, methods=methods)
+                @wraps(handler)
+                def wrapped_handler(*args, **kwargs):
+                    start_time = time.time()
+                    request_id = str(uuid.uuid4())
+                    
+                    try:
+                        # Create request object
+                        req = Request()
+                        req.version = version
+                        req.category = category
+                        req.module_id = self.module_id
+                        req.request_id = request_id
+                        
+                        # Validate request data if model provided
+                        if request_model and request.is_json:
+                            validated_data = request_model(**req.json)
+                            req.validated_data = validated_data
+                        
+                        # Execute handler
+                        result = handler(req, *args, **kwargs)
+                        
+                        # Handle different response types
+                        if isinstance(result, (Response, tuple)):
+                            return result
+                        
+                        # Validate response if model provided
+                        if response_model:
+                            result = response_model(**result).dict()
+                        
+                        # Create response
+                        duration = (time.time() - start_time) * 1000
+                        return Response.success(
+                            data=result,
+                            metadata={
+                                "version": version,
+                                "category": category,
+                                "endpoint": endpoint,
+                                "request_id": request_id,
+                                "duration_ms": duration
+                            }
+                        )
+                        
+                    except ValidationError as e:
+                        logger.error(
+                            f"Validation error in {endpoint} {version}",
+                            extra={
+                                "errors": e.errors(),
+                                "request_id": request_id,
+                                "request_data": request.get_json(silent=True)
+                            }
+                        )
+                        return Response.error(
+                            ManagedError.validation_error(
+                                message="Invalid request data",
+                                data={"errors": e.errors()}
+                            )
+                        )
+                        
+                    except Exception as e:
+                        logger.exception(
+                            f"Error in {endpoint} {version}",
+                            extra={
+                                "request_id": request_id,
+                                "request_data": request.get_json(silent=True)
+                            }
+                        )
+                        return Response.error(
+                            ManagedError.service_error(
+                                service=self.module_config.get("MODULE_NAME", "unknown"),
+                                message=str(e),
+                                exc_info=e
+                            )
+                        )
+                
+                # Store route metadata
+                wrapped_handler.methods = methods
+                wrapped_handler.category = category
+                wrapped_handler.version = version
+                
+                # Register route
+                if version not in self.routes:
+                    self.routes[version] = {}
+                self.routes[version][endpoint] = wrapped_handler
+                
+                logger.info(
+                    f"Registered route: {url} [{', '.join(methods)}] "
+                    f"-> {handler.__module__}.{handler.__name__}"
+                )
             
-            # Validate input against schema
-            validated_data = self.schema_manager.validate_data(data, version)
-            
-            # Execute handler
-            result = handler(validated_data)
-            
-            return ExecuteResponse(
-                status="success",
-                data=result,
-                execution_id=str(uuid.uuid4())
-            )
-            
-    def register_content_handler(
-        self,
-        handler: Callable[[Dict[str, Any]], Tuple[Any, str, Dict[str, Any]]]
-    ) -> None:
-        """Register content endpoint handler.
+            return handler
         
-        Args:
-            handler: Function that processes content requests
-        """
-        @self.app.route("/content", methods=["POST"])
-        @handle_errors
-        def get_content() -> ContentResponse:
-            data = request.get_json()
-            
-            # Execute handler
-            content_data, content_type, metadata = handler(data)
-            
-            return ContentResponse(
-                status="success",
-                data=content_data,
-                content_type=content_type,
-                metadata=metadata
-            )
-            
+        return decorator
+    
     def run(self, host: str = "0.0.0.0", port: int = 5000, **kwargs) -> None:
-        """Run the connector service.
+        """Run the module service.
         
         Args:
             host: Host to bind to
