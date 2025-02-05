@@ -1,3 +1,5 @@
-Workflows Connector Development Kit
+TO DO
 
-This project is a CDK for developing Stacksync Workflows Connectors.
+implement form builder /content mock
+
+- check module cdk and deploy

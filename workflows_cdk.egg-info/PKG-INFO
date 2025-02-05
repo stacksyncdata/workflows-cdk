@@ -1,52 +1,18 @@
 Metadata-Version: 2.2
 Name: workflows_cdk
-Version: 0.1.0
+Version: 0.0.1
 Summary: A CDK for developing Stacksync Workflows Connectors
 Author: Stacksync
 Author-email: oliviero@stacksync.com
-License: Stacksync Connector License
-Project-URL: Bug Reports, https://github.com/stacksync/workflows-cdk/issues
-Project-URL: Source, https://github.com/stacksync/workflows-cdk
-Project-URL: Documentation, https://workflows-cdk.readthedocs.io/
-Classifier: Development Status :: 3 - Alpha
-Classifier: Intended Audience :: Developers
-Classifier: License :: Stacksync Connector License
-Classifier: Programming Language :: Python :: 3
-Classifier: Programming Language :: Python :: 3.7
-Classifier: Programming Language :: Python :: 3.8
-Classifier: Programming Language :: Python :: 3.9
-Classifier: Programming Language :: Python :: 3.10
-Requires-Python: >=3.8
-Description-Content-Type: text/markdown
-License-File: LICENSE
-Requires-Dist: flask<3.0.0,>=2.0.3
-Requires-Dist: werkzeug<3.0.0,>=2.2.0
-Requires-Dist: gunicorn<23.0.0,>=22.0.0
+Requires-Dist: flask==2.0.3
+Requires-Dist: werkzeug==2.2
+Requires-Dist: pyopenssl==24.1.0
 Requires-Dist: flask-cors>=4.0.0
-Requires-Dist: pyopenssl>=24.0.0
-Requires-Dist: sentry-sdk[flask]>=1.26.0
 Requires-Dist: python-dotenv>=1.0.0
-Provides-Extra: dev
-Requires-Dist: pytest>=7.0.0; extra == "dev"
-Requires-Dist: black>=23.0.0; extra == "dev"
-Requires-Dist: isort>=5.0.0; extra == "dev"
-Requires-Dist: mypy>=1.0.0; extra == "dev"
-Requires-Dist: flake8>=6.0.0; extra == "dev"
-Provides-Extra: docs
-Requires-Dist: sphinx>=4.0.0; extra == "docs"
-Requires-Dist: sphinx-rtd-theme>=1.0.0; extra == "docs"
+Requires-Dist: gunicorn==22.0.0
+Requires-Dist: authlib==1.1.0
+Requires-Dist: sentry-sdk[Flask]==1.26.0
 Dynamic: author
 Dynamic: author-email
-Dynamic: classifier
-Dynamic: description
-Dynamic: description-content-type
-Dynamic: license
-Dynamic: project-url
-Dynamic: provides-extra
 Dynamic: requires-dist
-Dynamic: requires-python
 Dynamic: summary
-
-Workflows Connector Development Kit
-
-This project is a CDK for developing Stacksync Workflows Connectors.

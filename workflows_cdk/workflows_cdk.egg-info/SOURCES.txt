@@ -1,8 +1,0 @@
-LICENSE
-README.md
-setup.py
-workflows_cdk/workflows_cdk.egg-info/PKG-INFO
-workflows_cdk/workflows_cdk.egg-info/SOURCES.txt
-workflows_cdk/workflows_cdk.egg-info/dependency_links.txt
-workflows_cdk/workflows_cdk.egg-info/requires.txt
-workflows_cdk/workflows_cdk.egg-info/top_level.txt
