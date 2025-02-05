@@ -4,6 +4,7 @@ Version: 0.0.1
 Summary: A CDK for developing Stacksync Workflows Connectors
 Author: Stacksync
 Author-email: oliviero@stacksync.com
+Requires-Python: >=3.1
 Requires-Dist: flask==2.0.3
 Requires-Dist: werkzeug==2.2
 Requires-Dist: pyopenssl==24.1.0
@@ -15,4 +16,5 @@ Requires-Dist: sentry-sdk[Flask]==1.26.0
 Dynamic: author
 Dynamic: author-email
 Dynamic: requires-dist
+Dynamic: requires-python
 Dynamic: summary

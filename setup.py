@@ -4,9 +4,6 @@ Setup configuration for workflows-cdk package.
 
 from setuptools import find_packages, setup
 
-with open("README.md", "r") as f:
-    long_description = f.read()
-
 
 setup(
     name="workflows_cdk",
@@ -17,22 +14,14 @@ setup(
     packages=find_packages(),
     install_requires=[
         # Core dependencies
-
-        # Flask
         "flask==2.0.3",
         "werkzeug==2.2",
         "pyopenssl==24.1.0",
         "flask-cors>=4.0.0",
         "python-dotenv>=1.0.0",
-
-        # Server
         "gunicorn==22.0.0",
-        # Additional Requirements
-        ## Add your additional requirements here
         "authlib==1.1.0",
         "sentry-sdk[Flask]==1.26.0"
-
     ],
-
-  
+    python_requires=">=3.1"
 )

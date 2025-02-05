@@ -15,3 +15,20 @@ print(generate_credit_card_number(length=16))
 print(str(generate_pin_number(length=4)))
 
 print(generate_object_id())
+
+
+from workflows_cdk import Request, Response, create_app
+
+app = create_app()
+request = Request()
+
+
+response = Response(data={"message": "Hello, World!"})
+
+
+
+
+
+
+
+
