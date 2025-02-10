@@ -3,14 +3,18 @@ Unified router system for Stacksync Workflows CDK.
 Handles versioned endpoints, request validation, and response formatting.
 """
 
+import functools
+import inspect
+import json
 import logging
+import sys
 import time
+import traceback
 import uuid
 import os
-import json
 from datetime import datetime
 from functools import wraps
-from typing import Any, Callable, Dict, List, Optional, Type, Union, TypeVar, Protocol, cast
+from typing import Any, Callable, Dict, List, Optional, Type, Union, TypeVar, Protocol, cast, get_type_hints
 from pathlib import Path
 
 from flask import Flask, jsonify, request
@@ -36,12 +40,22 @@ class RouteHandler(Protocol):
 
 
 def create_route_url(base_path: str, endpoint: str, version: str) -> str:
-    """Create a versioned URL for an endpoint."""
-    return f"/{base_path.strip('/')}/{endpoint}/{version}"
+    """Create URL for a route."""
+    parts = [p for p in [base_path, version, endpoint] if p]
+    return f"/{'/'.join(parts)}"
 
 
 class ModuleRouter:
     """Router supporting versioned endpoints and module functionality."""
+    
+    _instance = None
+    
+    def __new__(cls, *args, **kwargs):
+        """Ensure single router instance per app."""
+        if not cls._instance:
+            cls._instance = super(ModuleRouter, cls).__new__(cls)
+            cls._instance._initialized = False
+        return cls._instance
     
     def __init__(
         self,
@@ -60,6 +74,9 @@ class ModuleRouter:
             module_config: Optional module configuration
             routes_dir: Directory containing routes (default: "routes")
         """
+        if self._initialized:
+            return
+            
         self.app = app or Flask(__name__)
         self.base_path = base_path.strip("/")
         self.module_id = module_id or str(uuid.uuid4())
@@ -71,7 +88,9 @@ class ModuleRouter:
         self._setup_health_check()
         self._setup_module_info()
         self._setup_auto_schema_routes()
-    
+        
+        self._initialized = True
+
     def _find_schema_file(self, version: str) -> Optional[str]:
         """Find schema.json file for a given version.
         
@@ -97,27 +116,25 @@ class ModuleRouter:
     def _setup_auto_schema_routes(self) -> None:
         """Set up automatic schema routes for versions without explicit /schema endpoints."""
         try:
-            # Get all version directories
-            base_dir = Path(self.routes_dir) / self.base_path
-            if not base_dir.exists():
+            # Find all version directories
+            module_dir = Path(self.routes_dir) / self.base_path
+            if not module_dir.exists():
                 return
                 
-            for version_dir in base_dir.iterdir():
-                if not version_dir.is_dir() or not version_dir.name.startswith("v"):
+            for version_dir in module_dir.iterdir():
+                if not version_dir.is_dir():
                     continue
                     
                 version = version_dir.name
+                schema_file = version_dir / "schema.json"
                 
-                # Check if /schema route already exists for this version
+                if not schema_file.exists():
+                    continue
+                    
+                # Create schema route if not already registered
                 if version in self.routes and "schema" in self.routes[version]:
                     continue
                     
-                # Look for schema.json
-                schema_file = self._find_schema_file(version)
-                if not schema_file:
-                    continue
-                    
-                # Create automatic schema route
                 url = create_route_url(self.base_path, "schema", version)
                 
                 @self.app.route(url, methods=["GET"])
@@ -206,28 +223,27 @@ class ModuleRouter:
     def route(
         self,
         endpoint: str,
-        versions: List[str],
-        methods: List[str] = ["POST"],
-        category: str = "action",
-        request_model: Optional[Type[BaseModel]] = None,
-        response_model: Optional[Type[BaseModel]] = None
+        versions: Optional[List[str]] = None,
+        methods: Optional[List[str]] = None,
+        category: str = "action"
     ) -> Callable[[F], F]:
-        """Decorator to register a route with versions.
+        """Simplified route decorator.
         
         Args:
             endpoint: Endpoint name (used in URL)
-            versions: List of supported versions
-            methods: HTTP methods to support
-            category: Route category (action/trigger/info)
-            request_model: Optional Pydantic model for request validation
-            response_model: Optional Pydantic model for response validation
+            versions: List of supported versions (defaults to ["v1"])
+            methods: HTTP methods (defaults to ["POST"])
+            category: Route category (defaults to "action")
         """
+        versions = versions or ["v1"]
+        methods = methods or ["POST"]
+        
         def decorator(handler: F) -> F:
             for version in versions:
                 url = create_route_url(self.base_path, endpoint, version)
                 
                 @self.app.route(url, methods=methods)
-                @wraps(handler)
+                @functools.wraps(handler)
                 def wrapped_handler(*args: Any, **kwargs: Any) -> Any:
                     start_time = time.time()
                     request_id = str(uuid.uuid4())
@@ -240,21 +256,12 @@ class ModuleRouter:
                         req.module_id = self.module_id
                         req.request_id = request_id
                         
-                        # Validate request data if model provided
-                        if request_model and request.is_json:
-                            validated_data = request_model(**req.json)
-                            req.validated_data = validated_data
-                        
                         # Execute handler
                         result = handler(req, *args, **kwargs)
                         
                         # Handle different response types
                         if isinstance(result, (Response, tuple)):
                             return result
-                        
-                        # Validate response if model provided
-                        if response_model:
-                            result = response_model(**result).dict()
                         
                         # Create response
                         duration = (time.time() - start_time) * 1000
@@ -269,37 +276,46 @@ class ModuleRouter:
                             }
                         )
                         
-                    except ValidationError as e:
-                        logger.error(
-                            f"Validation error in {endpoint} {version}",
-                            extra={
-                                "errors": e.errors(),
-                                "request_id": request_id,
-                                "request_data": request.get_json(silent=True)
-                            }
-                        )
-                        return Response.error(
-                            ManagedError.validation_error(
-                                message="Invalid request data",
-                                data={"errors": e.errors()}
-                            )
-                        )
-                        
                     except Exception as e:
-                        logger.exception(
-                            f"Error in {endpoint} {version}",
-                            extra={
-                                "request_id": request_id,
-                                "request_data": request.get_json(silent=True)
-                            }
+                        # Get detailed error context
+                        exc_type, exc_value, exc_tb = sys.exc_info()
+                        tb = traceback.extract_tb(exc_tb)
+                        
+                        # Get local variables at point of error
+                        frame = next(
+                            (frame for frame in inspect.trace() if frame.code_context),
+                            None
                         )
-                        return Response.error(
-                            ManagedError.service_error(
-                                service=self.module_config.get("MODULE_NAME", "unknown"),
-                                message=str(e),
-                                exc_info=e
+                        locals_dict = frame.frame.f_locals if frame else {}
+                        
+                        # Clean locals (remove request object and self)
+                        clean_locals = {
+                            k: str(v) for k, v in locals_dict.items()
+                            if k not in {"self", "req", "request"}
+                        }
+                        
+                        error_context = {
+                            "traceback": [str(f) for f in tb],
+                            "locals": clean_locals,
+                            "function": handler.__name__,
+                            "module": handler.__module__,
+                            "line": tb[-1].lineno if tb else None,
+                            "file": tb[-1].filename if tb else None,
+                            "request_id": request_id
+                        }
+                        
+                        if isinstance(e, ManagedError):
+                            e.data = {**(e.data or {}), **error_context}
+                            return Response.error(e)
+                        else:
+                            return Response.error(
+                                ManagedError.service_error(
+                                    service=self.module_config.get("MODULE_NAME", "unknown"),
+                                    message=str(e),
+                                    data=error_context,
+                                    exc_info=e
+                                )
                             )
-                        )
                 
                 # Store route metadata
                 wrapped = cast(RouteHandler, wrapped_handler)
