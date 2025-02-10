@@ -66,7 +66,7 @@ def create_app(
     # Configure logging
     logging.basicConfig(
         level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        format='%(levelname)s - %(message)s'  # Simplified format
     )
     
     # Configure Sentry
@@ -80,7 +80,7 @@ def create_app(
             before_send=_prepare_sentry_event
         )
     else:
-        app.logger.warning("No valid Sentry DSN provided, error tracking disabled")
+        app.logger.info("Sentry disabled - no valid DSN")
     
     # Configure CORS
     if cors_origins:
@@ -89,39 +89,22 @@ def create_app(
     # Register error handlers
     @app.errorhandler(ManagedError)
     def handle_managed_error(error: ManagedError):
-        # Log error details
+        # Log error details concisely
         app.logger.error(
-            f"Managed error in {request.endpoint}",
+            f"{request.endpoint}: {error.error}",
             extra={
-                "error": str(error),
                 "data": error.data,
-                "metadata": error.metadata,
-                "traceback": traceback.format_exc(),
-                "request": {
-                    "method": request.method,
-                    "url": request.url,
-                    "headers": dict(request.headers),
-                    "data": request.get_json(silent=True)
-                }
+                "metadata": error.metadata
             }
         )
         return Response.error(error)
     
     @app.errorhandler(Exception)
     def handle_error(error: Exception):
-        # Log unexpected error
+        # Log unexpected error concisely
         app.logger.error(
-            f"Unexpected error in {request.endpoint}",
-            extra={
-                "error": str(error),
-                "traceback": traceback.format_exc(),
-                "request": {
-                    "method": request.method,
-                    "url": request.url,
-                    "headers": dict(request.headers),
-                    "data": request.get_json(silent=True)
-                }
-            }
+            f"{request.endpoint}: {str(error)}",
+            extra={"traceback": traceback.format_exc()}
         )
         sentry_sdk.capture_exception(error)
         return Response.error(error, status_code=500)
