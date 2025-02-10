@@ -15,7 +15,7 @@ from flask import Flask, jsonify, request, Blueprint
 from flask_cors import CORS
 import sentry_sdk
 from sentry_sdk.integrations.flask import FlaskIntegration
-import yaml  # type: ignore
+import yaml 
 
 from .errors import ManagedError
 from .responses import Response
@@ -70,14 +70,17 @@ def create_app(
     )
     
     # Configure Sentry
-    if sentry_dsn or app_settings.get("sentry_dsn"):
+    dsn = sentry_dsn or app_settings.get("sentry_dsn")
+    if dsn and isinstance(dsn, str) and dsn.startswith(("http://", "https://")):
         sentry_sdk.init(
-            dsn=sentry_dsn or app_settings.get("sentry_dsn"),
+            dsn=dsn,
             integrations=[FlaskIntegration()],
             traces_sample_rate=1.0,
             environment=os.getenv("ENVIRONMENT", "development"),
             before_send=_prepare_sentry_event
         )
+    else:
+        app.logger.warning("No valid Sentry DSN provided, error tracking disabled")
     
     # Configure CORS
     if cors_origins:
