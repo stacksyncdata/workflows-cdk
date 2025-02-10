@@ -2,20 +2,11 @@
 Standardized API responses for workflow operations.
 """
 
-from typing import Any, Dict, Optional, Union, TypedDict
+from typing import Any, Dict, Optional, Union
 from datetime import datetime
 from flask import jsonify, make_response, Response as FlaskResponse
 
 from .errors import ManagedError
-
-
-class ResponseData(TypedDict, total=False):
-    """Type definition for response data."""
-    status: str
-    message: str
-    error: str
-    data: Any
-    metadata: Dict[str, Any]
 
 
 class Response:
@@ -36,7 +27,7 @@ class Response:
             metadata: Optional metadata
             status_code: HTTP status code
         """
-        response: ResponseData = {
+        response = {
             "status": "success",
             "message": message,
             "data": data
@@ -49,26 +40,37 @@ class Response:
     
     @staticmethod
     def error(
-        error: Union[Exception, str],
-        message: Optional[str] = None,
-        data: Optional[Dict[str, Any]] = None,
+        error: Union[ManagedError, Exception, str],
         status_code: int = 400
     ) -> FlaskResponse:
         """Create an error response.
         
         Args:
             error: Error object or message
-            message: Optional error message override
-            data: Additional error data
             status_code: HTTP status code
         """
-        response: ResponseData = {
-            "status": "error",
-            "error": str(error),
-            "message": message or str(error)
-        }
-        
-        if data:
-            response["data"] = data
+        if isinstance(error, ManagedError):
+            response = {
+                "status": "error",
+                "error": error.error,
+                "data": error.data,
+                "metadata": error.metadata
+            }
+        elif isinstance(error, Exception):
+            response = {
+                "status": "error",
+                "error": str(error),
+                "data": {
+                    "exception_type": type(error).__name__
+                },
+                "metadata": {
+                    "traceback": str(error.__traceback__)
+                }
+            }
+        else:
+            response = {
+                "status": "error",
+                "error": str(error)
+            }
             
         return make_response(jsonify(response), status_code)

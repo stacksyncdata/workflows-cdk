@@ -154,9 +154,12 @@ class ModuleRouter:
                         logger.error(f"Error serving schema file {schema_path}: {e}")
                         return Response.error(
                             ManagedError.service_error(
+                                error=f"Error serving schema: {str(e)}",
                                 service=self.module_config.get("MODULE_NAME", "unknown"),
-                                message=f"Error serving schema: {str(e)}",
-                                exc_info=e
+                                data={
+                                    "schema_path": str(schema_path),
+                                    "exception_type": type(e).__name__
+                                }
                             )
                         )
                 
@@ -293,7 +296,7 @@ class ModuleRouter:
                             k: str(v) for k, v in locals_dict.items()
                             if k not in {"self", "req", "request"}
                         }
-                        
+                    
                         error_context = {
                             "traceback": [str(f) for f in tb],
                             "locals": clean_locals,
@@ -305,18 +308,22 @@ class ModuleRouter:
                         }
                         
                         if isinstance(e, ManagedError):
-                            e.data = {**(e.data or {}), **error_context}
+                            # Add error context to existing metadata
+                            e.metadata.update(error_context)
                             return Response.error(e)
                         else:
+                            # Create new ManagedError with full context
                             return Response.error(
-                                ManagedError.service_error(
-                                    service=self.module_config.get("MODULE_NAME", "unknown"),
-                                    message=str(e),
-                                    data=error_context,
-                                    exc_info=e
+                                ManagedError(
+                                    error=str(e),
+                                    data={
+                                        "exception_type": type(e).__name__,
+                                        "service": self.module_config.get("MODULE_NAME", "unknown")
+                                    },
+                                    metadata=error_context
                                 )
                             )
-                
+                    
                 # Store route metadata
                 wrapped = cast(RouteHandler, wrapped_handler)
                 wrapped.methods = methods
