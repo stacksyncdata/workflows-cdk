@@ -20,7 +20,8 @@ setup(
         "python-dotenv>=1.0.0",
         "gunicorn==22.0.0",
         "sentry-sdk[Flask]==1.26.0",
-        "pydantic>=2.0.0"
+        "pydantic>=2.0.0",
+        "pyyaml>=6.0.0"
     ],
     python_requires=">=3.10",
     packages=find_packages(where="src"),
