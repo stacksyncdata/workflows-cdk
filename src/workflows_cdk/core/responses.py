@@ -2,14 +2,23 @@
 Standardized API responses for workflow operations.
 """
 
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Union, TypedDict
 from datetime import datetime
 from flask import jsonify, make_response, Response as FlaskResponse
 
 from .errors import ManagedError
 
 
-class Response(FlaskResponse):
+class ResponseData(TypedDict, total=False):
+    """Type definition for response data."""
+    status: str
+    message: str
+    error: str
+    data: Any
+    metadata: Dict[str, Any]
+
+
+class Response:
     """Standardized response handling."""
     
     @staticmethod
@@ -18,7 +27,7 @@ class Response(FlaskResponse):
         message: str = "Success",
         metadata: Optional[Dict[str, Any]] = None,
         status_code: int = 200
-    ) -> Any:
+    ) -> FlaskResponse:
         """Create a success response.
         
         Args:
@@ -27,7 +36,7 @@ class Response(FlaskResponse):
             metadata: Optional metadata
             status_code: HTTP status code
         """
-        response = {
+        response: ResponseData = {
             "status": "success",
             "message": message,
             "data": data
@@ -44,7 +53,7 @@ class Response(FlaskResponse):
         message: Optional[str] = None,
         data: Optional[Dict[str, Any]] = None,
         status_code: int = 400
-    ) -> Any:
+    ) -> FlaskResponse:
         """Create an error response.
         
         Args:
@@ -53,7 +62,7 @@ class Response(FlaskResponse):
             data: Additional error data
             status_code: HTTP status code
         """
-        response = {
+        response: ResponseData = {
             "status": "error",
             "error": str(error),
             "message": message or str(error)

@@ -11,7 +11,6 @@ setup(
     description="A CDK for developing Stacksync Workflows Connectors",
     author="Stacksync",
     author_email="oliviero@stacksync.com",
-    packages=find_packages(),
     install_requires=[
         # Core dependencies
         "flask==2.0.3",
@@ -23,5 +22,8 @@ setup(
         "authlib==1.1.0",
         "sentry-sdk[Flask]==1.26.0"
     ],
-    python_requires=">=3.1"
+    python_requires=">=3.11",
+    packages=find_packages(where="src"),
+    package_dir={"": "src"},
+    include_package_data=True,
 )
