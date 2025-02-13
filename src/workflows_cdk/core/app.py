@@ -14,7 +14,7 @@ from sentry_sdk.integrations.flask import FlaskIntegration
 
 from .errors import ManagedError
 from .responses import Response
-from . import router
+
 
 def load_app_config(app_dir: str) -> Dict[str, Any]:
     """Load application configuration from app_config.yaml."""
@@ -82,6 +82,6 @@ def create_app(
         return Response.error(error, status_code=500)
     
     # Initialize router
-    router.init_app(app)
+
     
     return app 
