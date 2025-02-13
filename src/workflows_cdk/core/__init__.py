@@ -3,11 +3,24 @@ Core functionality for Stacksync Workflows CDK.
 Provides base classes and utilities for connector development.
 """
 
-
-from .app import create_app
-from .router import ModuleRouter
+from .router import ModuleRouter, init_app, get_router
+from .errors import ManagedError
 from .responses import Response
 from .request import Request
-from .types import ConnectorConfig
-from .errors import ManagedError
+from .app import create_app
+
+from .dynamic_routing import FlaskFSRouter
+
+# Create the single global router instance
+
+
+__all__ = [
+    'create_app',
+    'Request',
+    'Response',
+    'ManagedError',
+    'router',
+    'ModuleRouter',
+    'init_app'
+]
  
