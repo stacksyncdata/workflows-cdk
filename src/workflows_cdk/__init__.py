@@ -13,7 +13,7 @@ from .core import (
     ManagedError,
     router,
     ModuleRouter,
-    FlaskFSRouter,
+    Router,
 
 )
 

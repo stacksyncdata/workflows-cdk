@@ -11,8 +11,35 @@ import sys
 import types
 import importlib.util
 from pathlib import Path
+from workflows_cdk.core.errors import ManagedError
+from workflows_cdk.core.responses import Response
+import sentry_sdk
 
-class FlaskFSRouter:
+def wrap_route_handler(handler: Callable) -> Callable:
+    """Simple wrapper for route handlers that adds error handling and response formatting."""
+    @wraps(handler)
+    def wrapped_handler(*args: Any, **kwargs: Any) -> Any:
+        try:
+            # Execute the handler
+            result = handler(*args, **kwargs)
+            
+            # Convert dict responses to standard format
+            if isinstance(result, dict):
+                return Response.success(data=result)
+            return result
+            
+        except ManagedError as e:
+            # Handle known errors
+            return Response.error(e)
+        except Exception as e:
+            # Log and handle unexpected errors
+            print(f"Unhandled error in {handler.__name__}: {str(e)}")
+            sentry_sdk.capture_exception(e)
+            return Response.error(e, status_code=500)
+            
+    return wrapped_handler
+
+class Router:
     """Flask File System Router that enables automatic route path detection based on file location."""
     
     def __init__(self, app: Optional[Flask] = None) -> None:
@@ -25,6 +52,70 @@ class FlaskFSRouter:
         
         if app is not None:
             self.init_app(app)
+
+    def _create_route_info(self, function: Callable, rule: Optional[str] = None, options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Create route information dictionary from a function and options.
+        
+        Args:
+            function: The route handler function
+            rule: Optional URL rule
+            options: Optional route options
+            
+        Returns:
+            Dictionary containing route information
+            
+        Raises:
+            ValueError: If module path cannot be determined
+        """
+        options = options or {}
+        
+        # Get the file path of the module containing this function
+        function_module = inspect.getmodule(function)
+        if not function_module or not function_module.__file__:
+            raise ValueError("Could not determine the module path for the function")
+            
+        # Get base path from the file's location
+        routes_directory = Path(os.path.join(os.getcwd(), "routes"))
+        module_file_path = Path(function_module.__file__).resolve()
+        
+        # Check if the module is in the routes directory
+        try:
+            relative_path = module_file_path.relative_to(routes_directory)
+            # Generate base path from routes directory structure
+            path_parts = list(relative_path.parent.parts)
+            base_path = "/" + "/".join(path_parts)
+        except ValueError:
+            # Module is not in routes directory, use provided rule as is
+            base_path = ""
+            path_parts = []
+            
+        # Generate the full URL path
+        if rule:
+            endpoint_path = rule if rule.startswith("/") else f"/{rule}"
+        else:
+            endpoint_path = f"/{function.__name__}"
+            
+        full_url_path = f"{base_path}{endpoint_path}"
+         
+        # Set default HTTP methods to POST if not specified
+        http_methods = options.get("methods", ["POST"])
+        
+        # Generate unique endpoint name
+        endpoint_name = f"{'.'.join(path_parts)}.{function.__name__}" if path_parts else function.__name__
+        
+        # Create route information dictionary
+        route_info = {
+            "path": full_url_path,
+            "endpoint": endpoint_name,
+            "view_func": wrap_route_handler(function),
+            "methods": http_methods
+        }
+        # Add any additional options
+        for key, value in options.items():
+            if key != "methods":  # Skip methods as we've already handled it
+                route_info[key] = value
+                
+        return route_info
             
     def discover_routes(self) -> None:
         """
@@ -89,11 +180,17 @@ class FlaskFSRouter:
                             if hasattr(function_object, "__route_info__"):
                                 route_info = getattr(function_object, "__route_info__")
                                 if route_info not in self.routes:
+
+
                                     # Update the route path based on the file's location in the routes directory
-                                    path_parts = list(route_file_path.parent.relative_to(routes_directory).parts)
-                                    if route_info["path"].startswith("/"):
-                                        route_info["path"] = "/" + "/".join(path_parts) + route_info["path"]
-                                    
+                                    # path_parts = list(route_file_path.parent.relative_to(routes_directory).parts)
+                                    # if route_info["path"].startswith("/"):
+                                    #     route_info["path"] = "/" + "/".join(path_parts) + route_info["path"]
+                                    # route_options = {k:v for k,v in route_info.items() if k not in ["methods"]}
+                                    # for key, value in route_options.items():
+                                    #     route_info[key] = value
+
+
                                     self.routes.append(route_info)
                                     print(f"Found route: {route_info['path']} with methods: [{','.join(route_info['methods'])}]")
                     
@@ -114,14 +211,30 @@ class FlaskFSRouter:
             # Remove the project root from sys.path
             if current_working_directory in sys.path:
                 sys.path.remove(current_working_directory)
-            
+    
+    def register_error_handlers(self, app: Flask) -> None:
+        
+        @app.errorhandler(ManagedError)
+        def handle_managed_error(error: ManagedError):
+            app.logger.error(f"Managed error: {error.error}")
+            return Response.error(error)
+        
+        @app.errorhandler(Exception)
+        def handle_error(error: Exception):
+            print(f"Unhandled error: {str(error)}")
+            app.logger.error(f"Unhandled error: {str(error)}")
+            sentry_sdk.capture_exception(error)
+            return Response.error(error, status_code=500)
+
     def init_app(self, app: Flask) -> None:
         """Initialize the router with a Flask app and register all discovered routes."""
         self.app = app
         
         # First discover all routes in the project
         self.discover_routes()
-        
+
+        self.register_error_handlers(app)
+    
         # Register each discovered route with Flask
         for route_info in self.routes:
             print(f"Registering route: {route_info['path']} with methods: [{','.join(route_info['methods'])}] -> {route_info['endpoint']}")
@@ -129,7 +242,9 @@ class FlaskFSRouter:
                 route_info["path"],
                 endpoint=route_info["endpoint"],
                 view_func=route_info["view_func"],
-                methods=route_info["methods"]
+                methods=route_info["methods"],
+                **route_info["options"]
+                # **{k: v for k, v in route_info.items() if k not in ["path", "endpoint", "view_func", "methods"]}
             )
             print(f"Successfully registered route: {route_info['path']} with methods: [{','.join(route_info['methods'])}] -> {route_info['endpoint']}")
         
@@ -155,6 +270,7 @@ class FlaskFSRouter:
                 return f"Org {org_id}, User {user_id}, Team {team_id}"
         """
         def decorator(function: Callable) -> Callable:
+
             # Get the file path of the module containing this function
             function_module = inspect.getmodule(function)
             if not function_module or not function_module.__file__:
@@ -189,14 +305,18 @@ class FlaskFSRouter:
                 
                 # Generate unique endpoint name
                 endpoint_name = f"{'.'.join(path_parts)}.{function.__name__}" if path_parts else function.__name__
-                
+                wrapped_function = wrap_route_handler(function)
                 # Create route information dictionary
                 route_info = {
                     "path": full_url_path,
                     "endpoint": endpoint_name,
-                    "view_func": function,
-                    "methods": http_methods
+                    "view_func": wrapped_function,
+                    "methods": http_methods,
+                    "options": options
                 }
+
+                # route_info = self._create_route_info(function, rule, options)
+
                 
                 # Store route info on the function for later discovery
                 setattr(function, "__route_info__", route_info)
@@ -211,7 +331,9 @@ class FlaskFSRouter:
                         route_info["path"],
                         endpoint=route_info["endpoint"],
                         view_func=route_info["view_func"],
-                        methods=route_info["methods"]
+                        methods=route_info["methods"],
+                        **route_info["options"]
+                        # **{k: v for k, v in route_info.items() if k not in ["path", "endpoint", "view_func", "methods"]}
                     )
                     print(f"Registered new route: {route_info['path']} with methods: [{','.join(route_info['methods'])}] -> {route_info['endpoint']}")
                 

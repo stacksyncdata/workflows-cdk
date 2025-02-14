@@ -9,7 +9,7 @@ from .responses import Response
 from .request import Request
 from .app import create_app
 
-from .dynamic_routing import FlaskFSRouter
+from .dynamic_routing import Router
 
 # Create the single global router instance
 
@@ -19,7 +19,7 @@ __all__ = [
     'Request',
     'Response',
     'ManagedError',
-    'router',
+    'Router',
     'ModuleRouter',
     'init_app'
 ]
