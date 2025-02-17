@@ -5,15 +5,28 @@ Automatically discovers and registers routes based on your file system structure
 from functools import wraps
 from typing import Any, Callable, Dict, List, Optional, Union, cast
 from flask import Flask, request
+from flask_cors import CORS
 import inspect
 import os
 import sys
 import types
 import importlib.util
+import logging
+import yaml
 from pathlib import Path
+from sentry_sdk.integrations.flask import FlaskIntegration
 from workflows_cdk.core.errors import ManagedError
 from workflows_cdk.core.responses import Response
 import sentry_sdk
+
+def load_app_config(app_dir: str) -> Dict[str, Any]:
+    """Load application configuration from app_config.yaml."""
+    config_path = os.path.join(app_dir, "app_config.yaml")
+    if not os.path.exists(config_path):
+        return {}
+        
+    with open(config_path, "r") as f:
+        return yaml.safe_load(f) or {}
 
 def wrap_route_handler(handler: Callable) -> Callable:
     """Simple wrapper for route handlers that adds error handling and response formatting."""
@@ -29,12 +42,53 @@ def wrap_route_handler(handler: Callable) -> Callable:
             return result
             
         except ManagedError as e:
-            # Handle known errors
+            # Log managed errors with full context
+            logging.error(
+                f"Managed error in {handler.__name__}:\n"
+                f"Error: {str(e)}\n"
+                f"Data: {e.data}\n"
+                f"Metadata: {e.metadata}",
+                exc_info=True
+            )
             return Response.error(e)
+            
         except Exception as e:
-            # Log and handle unexpected errors
-            print(f"Unhandled error in {handler.__name__}: {str(e)}")
+            # Get full traceback for logging
+            import traceback
+            tb = traceback.format_exc()
+            
+            # Always log the full error details
+            logging.error(
+                f"Unhandled error in {handler.__name__}:\n"
+                f"Error: {str(e)}\n"
+                f"Type: {type(e).__name__}\n"
+                f"Traceback:\n{tb}"
+            )
+            
+            # Set Sentry context and capture exception
+            sentry_sdk.set_context("error_details", {
+                "handler": handler.__name__,
+                "error_type": type(e).__name__,
+                "args": str(args),
+                "kwargs": str(kwargs)
+            })
+            
+            sentry_sdk.set_tag("handler_name", handler.__name__)
+            sentry_sdk.set_tag("error_type", type(e).__name__)
+            
+            # Add request data if available
+            if request:
+                sentry_sdk.set_context("request_data", {
+                    "url": request.url,
+                    "method": request.method,
+                    "headers": dict(request.headers),
+                    "args": dict(request.args)
+                })
+            
+            # Capture the exception with all the context
             sentry_sdk.capture_exception(e)
+            
+            # Return error response (will be sanitized in production by Response class)
             return Response.error(e, status_code=500)
             
     return wrapped_handler
@@ -42,16 +96,82 @@ def wrap_route_handler(handler: Callable) -> Callable:
 class Router:
     """Flask File System Router that enables automatic route path detection based on file location."""
     
-    def __init__(self, app: Optional[Flask] = None) -> None:
-        """Initialize router with storage for routes."""
+    def __init__(self, app: Optional[Flask] = None, *, 
+                 config: Optional[Dict[str, Any]] = None,
+                 sentry_dsn: Optional[str] = None,
+                 cors_origins: Optional[List[str]] = None) -> None:
+        """Initialize router with storage for routes.
+        
+        Args:
+            app: Optional Flask application instance
+            config: Optional configuration dictionary
+            sentry_dsn: Optional Sentry DSN for error tracking
+            cors_origins: Optional list of allowed CORS origins
+        """
         # List to store all discovered routes
         self.routes: List[Dict[str, Any]] = []
         # Flask application instance
         self.app: Optional[Flask] = None
         self._router_instance = self
         
+        # Load configuration from app_config.yaml
+        self.app_config = load_app_config(os.getcwd())
+        self.app_settings = self.app_config.get("app_settings", {})
+        
+        # Store configuration
+        self.config = config or {}
+        self.sentry_dsn = sentry_dsn
+        self.cors_origins = cors_origins
+        
         if app is not None:
             self.init_app(app)
+
+    def configure_logging(self, app: Flask) -> None:
+        """Configure application logging."""
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(levelname)s - %(message)s'
+        )
+
+    def configure_sentry(self, app: Flask) -> None:
+        """Configure Sentry error tracking."""
+        dsn = self.sentry_dsn or self.app_settings.get("sentry_dsn")
+        environment = os.getenv("ENVIRONMENT", "development")
+
+        def strip_locals(event, hint):
+            if event.get("exception", {}).get("values"):
+                for exc in event["exception"]["values"]:
+                    if exc.get("stacktrace", {}).get("frames"):
+                        for frame in exc["stacktrace"]["frames"]:
+                            if "vars" in frame:
+                                del frame["vars"]
+            return event
+
+        try:
+            sentry_sdk.init(
+                dsn=dsn,
+                integrations=[
+                    FlaskIntegration(transaction_style="url")
+                ],
+                traces_sample_rate=1.0,
+                environment=environment,
+                profiles_sample_rate=1.0,
+                attach_stacktrace=True,
+                auto_session_tracking=True,
+                enable_tracing=True,
+                before_send=strip_locals,
+                send_default_pii=False,
+                debug=False
+            )
+            app.logger.info("Sentry initialized successfully")
+        except Exception as e:
+            app.logger.error(f"Failed to initialize Sentry: {e}")
+
+    def configure_cors(self, app: Flask) -> None:
+        """Configure CORS settings."""
+        origins = self.cors_origins or self.app_settings.get("cors_origins")
+        if origins:
+            CORS(app, origins=origins)
 
     def _create_route_info(self, function: Callable, rule: Optional[str] = None, options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Create route information dictionary from a function and options.
@@ -102,12 +222,14 @@ class Router:
         
         # Generate unique endpoint name
         endpoint_name = f"{'.'.join(path_parts)}.{function.__name__}" if path_parts else function.__name__
-        
+
+        # Wrap the function with error handling and response formatting
+        wrapped_function = wrap_route_handler(function)
         # Create route information dictionary
         route_info = {
             "path": full_url_path,
             "endpoint": endpoint_name,
-            "view_func": wrap_route_handler(function),
+            "view_func": wrapped_function,
             "methods": http_methods
         }
         # Add any additional options
@@ -180,17 +302,6 @@ class Router:
                             if hasattr(function_object, "__route_info__"):
                                 route_info = getattr(function_object, "__route_info__")
                                 if route_info not in self.routes:
-
-
-                                    # Update the route path based on the file's location in the routes directory
-                                    # path_parts = list(route_file_path.parent.relative_to(routes_directory).parts)
-                                    # if route_info["path"].startswith("/"):
-                                    #     route_info["path"] = "/" + "/".join(path_parts) + route_info["path"]
-                                    # route_options = {k:v for k,v in route_info.items() if k not in ["methods"]}
-                                    # for key, value in route_options.items():
-                                    #     route_info[key] = value
-
-
                                     self.routes.append(route_info)
                                     print(f"Found route: {route_info['path']} with methods: [{','.join(route_info['methods'])}]")
                     
@@ -213,41 +324,89 @@ class Router:
                 sys.path.remove(current_working_directory)
     
     def register_error_handlers(self, app: Flask) -> None:
+        """Register error handlers for the application."""
         
         @app.errorhandler(ManagedError)
         def handle_managed_error(error: ManagedError):
-            app.logger.error(f"Managed error: {error.error}")
+            # Log managed errors with traceback
+            logging.error(f"Managed error: {error.error}", exc_info=True)
             return Response.error(error)
         
         @app.errorhandler(Exception)
         def handle_error(error: Exception):
-            print(f"Unhandled error: {str(error)}")
-            app.logger.error(f"Unhandled error: {str(error)}")
+            # Get full traceback
+            import traceback
+            tb = traceback.format_exc()
+            
+            # Log the full error with traceback
+            logging.error(
+                f"Unhandled error:\n"
+                f"Error: {str(error)}\n"
+                f"Traceback:\n{tb}"
+            )
             sentry_sdk.capture_exception(error)
+            
+            # Send to Sentry with full context
+            # with sentry_sdk.push_scope() as scope:
+            #     scope.set_extra("traceback", tb)
+            #     sentry_sdk.capture_exception(error)
+            
             return Response.error(error, status_code=500)
 
+
+    def _register_core_routes(self, app: Flask) -> None:
+        """Register core routes."""
+        @app.route("/health", methods=["GET"])
+        def health_check():
+            return Response.success(data={"status": "healthy"})
+        
+        @app.route("/app_info", methods=["GET"])
+        def module_info():
+           return Response.success(data={
+               "name": self.app_config.get("app_name"),
+               "version": self.app_config.get("app_version"),
+               "description": self.app_config.get("app_description"),
+               "routes": self.routes
+           })
+            
+            
     def init_app(self, app: Flask) -> None:
         """Initialize the router with a Flask app and register all discovered routes."""
         self.app = app
         
+        # Update Flask configuration
+        app.config.update({
+            "JSON_SORT_KEYS": False,
+            "PROPAGATE_EXCEPTIONS": True,
+            **self.config,
+            **self.app_settings
+        })
+
+        # Configure components
+        self.configure_logging(app)
+        self.configure_sentry(app)
+        self.configure_cors(app)
+
+        # Register core routes
+        self._register_core_routes(app)
+        
         # First discover all routes in the project
         self.discover_routes()
 
+        # Register error handlers
         self.register_error_handlers(app)
-    
+        
         # Register each discovered route with Flask
         for route_info in self.routes:
-            print(f"Registering route: {route_info['path']} with methods: [{','.join(route_info['methods'])}] -> {route_info['endpoint']}")
             app.add_url_rule(
                 route_info["path"],
                 endpoint=route_info["endpoint"],
                 view_func=route_info["view_func"],
                 methods=route_info["methods"],
-                **route_info["options"]
-                # **{k: v for k, v in route_info.items() if k not in ["path", "endpoint", "view_func", "methods"]}
+                **{k: v for k, v in route_info.items() if k not in ["path", "endpoint", "view_func", "methods"]}
             )
             print(f"Successfully registered route: {route_info['path']} with methods: [{','.join(route_info['methods'])}] -> {route_info['endpoint']}")
-        
+
     def route(self, rule: Optional[str] = None, **options: Any) -> Callable:
         """
         Route decorator that combines base path with endpoint path.
@@ -270,53 +429,9 @@ class Router:
                 return f"Org {org_id}, User {user_id}, Team {team_id}"
         """
         def decorator(function: Callable) -> Callable:
-
-            # Get the file path of the module containing this function
-            function_module = inspect.getmodule(function)
-            if not function_module or not function_module.__file__:
-                raise ValueError("Could not determine the module path for the function")
-                
-            # Get base path from the file's location
             try:
-                routes_directory = Path(os.path.join(os.getcwd(), "routes"))
-                module_file_path = Path(function_module.__file__).resolve()
-                
-                # Check if the module is in the routes directory
-                try:
-                    relative_path = module_file_path.relative_to(routes_directory)
-                    # Generate base path from routes directory structure
-                    path_parts = list(relative_path.parent.parts)
-                    base_path = "/" + "/".join(path_parts)
-                except ValueError:
-                    # Module is not in routes directory, use provided rule as is
-                    base_path = ""
-                    path_parts = []
-                
-                # Generate the full URL path
-                if rule:
-                    endpoint_path = rule if rule.startswith("/") else f"/{rule}"
-                else:
-                    endpoint_path = f"/{function.__name__}"
-                    
-                full_url_path = f"{base_path}{endpoint_path}"
-                
-                # Set default HTTP methods to POST if not specified
-                http_methods = options.get("methods", ["POST"])
-                
-                # Generate unique endpoint name
-                endpoint_name = f"{'.'.join(path_parts)}.{function.__name__}" if path_parts else function.__name__
-                wrapped_function = wrap_route_handler(function)
-                # Create route information dictionary
-                route_info = {
-                    "path": full_url_path,
-                    "endpoint": endpoint_name,
-                    "view_func": wrapped_function,
-                    "methods": http_methods,
-                    "options": options
-                }
-
-                # route_info = self._create_route_info(function, rule, options)
-
+                # Create route information using helper method
+                route_info = self._create_route_info(function, rule, options)
                 
                 # Store route info on the function for later discovery
                 setattr(function, "__route_info__", route_info)
@@ -324,7 +439,7 @@ class Router:
                 # Store route for registration if not already stored
                 if route_info not in self.routes:
                     self.routes.append(route_info)
-                
+          
                 # If Flask app is already initialized, register the route immediately
                 if self.app:
                     self.app.add_url_rule(
@@ -332,8 +447,7 @@ class Router:
                         endpoint=route_info["endpoint"],
                         view_func=route_info["view_func"],
                         methods=route_info["methods"],
-                        **route_info["options"]
-                        # **{k: v for k, v in route_info.items() if k not in ["path", "endpoint", "view_func", "methods"]}
+                        **{k: v for k, v in route_info.items() if k not in ["path", "endpoint", "view_func", "methods"]}
                     )
                     print(f"Registered new route: {route_info['path']} with methods: [{','.join(route_info['methods'])}] -> {route_info['endpoint']}")
                 
