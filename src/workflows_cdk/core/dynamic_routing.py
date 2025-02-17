@@ -4,7 +4,7 @@ Automatically discovers and registers routes based on your file system structure
 """
 from functools import wraps
 from typing import Any, Callable, Dict, List, Optional, Union, cast
-from flask import Flask, request
+from flask import Flask, request as flask_request, current_app
 from flask_cors import CORS
 import inspect
 import os
@@ -17,7 +17,9 @@ from pathlib import Path
 from sentry_sdk.integrations.flask import FlaskIntegration
 from workflows_cdk.core.errors import ManagedError
 from workflows_cdk.core.responses import Response
+from workflows_cdk.core.sentry import init_sentry
 import sentry_sdk
+import traceback
 
 def load_app_config(app_dir: str) -> Dict[str, Any]:
     """Load application configuration from app_config.yaml."""
@@ -28,68 +30,42 @@ def load_app_config(app_dir: str) -> Dict[str, Any]:
     with open(config_path, "r") as f:
         return yaml.safe_load(f) or {}
 
+def log_error_details(app: Flask, error: Union[ManagedError, Exception], is_managed: bool = False) -> Optional[str]:
+    """Centralized error logging function."""
+    # Get full traceback
+    exc_info = (type(error), error, error.__traceback__)
+    tb_string = ''.join(traceback.format_exception(*exc_info))
+    
+    # Log the full traceback
+    app.logger.error("\nTraceback:")
+    app.logger.error(tb_string)
+    
+    return tb_string
+
 def wrap_route_handler(handler: Callable) -> Callable:
-    """Simple wrapper for route handlers that adds error handling and response formatting."""
+    """Wrap route handler with error handling and request context."""
     @wraps(handler)
     def wrapped_handler(*args: Any, **kwargs: Any) -> Any:
         try:
-            # Execute the handler
-            result = handler(*args, **kwargs)
+            # Execute handler and get response
+            response = handler(*args, **kwargs)
             
-            # Convert dict responses to standard format
-            if isinstance(result, dict):
-                return Response.success(data=result)
-            return result
+            # If response is a dict, convert to JSON response
+            if isinstance(response, dict):
+                return Response.success(data=response)
+            return response
             
-        except ManagedError as e:
-            # Log managed errors with full context
-            logging.error(
-                f"Managed error in {handler.__name__}:\n"
-                f"Error: {str(e)}\n"
-                f"Data: {e.data}\n"
-                f"Metadata: {e.metadata}",
-                exc_info=True
-            )
-            return Response.error(e)
+        except ManagedError as managed_error:
+            # Log error details and capture in Sentry
+            log_error_details(current_app, managed_error, is_managed=True)
+            sentry_sdk.capture_exception(managed_error)
+            return Response.error(managed_error)
             
-        except Exception as e:
-            # Get full traceback for logging
-            import traceback
-            tb = traceback.format_exc()
-            
-            # Always log the full error details
-            logging.error(
-                f"Unhandled error in {handler.__name__}:\n"
-                f"Error: {str(e)}\n"
-                f"Type: {type(e).__name__}\n"
-                f"Traceback:\n{tb}"
-            )
-            
-            # Set Sentry context and capture exception
-            sentry_sdk.set_context("error_details", {
-                "handler": handler.__name__,
-                "error_type": type(e).__name__,
-                "args": str(args),
-                "kwargs": str(kwargs)
-            })
-            
-            sentry_sdk.set_tag("handler_name", handler.__name__)
-            sentry_sdk.set_tag("error_type", type(e).__name__)
-            
-            # Add request data if available
-            if request:
-                sentry_sdk.set_context("request_data", {
-                    "url": request.url,
-                    "method": request.method,
-                    "headers": dict(request.headers),
-                    "args": dict(request.args)
-                })
-            
-            # Capture the exception with all the context
-            sentry_sdk.capture_exception(e)
-            
-            # Return error response (will be sanitized in production by Response class)
-            return Response.error(e, status_code=500)
+        except Exception as unhandled_error:
+            # Log error details and capture in Sentry
+            log_error_details(current_app, unhandled_error)
+            sentry_sdk.capture_exception(unhandled_error)
+            return Response.error(unhandled_error, status_code=500)
             
     return wrapped_handler
 
@@ -117,14 +93,21 @@ class Router:
         # Load configuration from app_config.yaml
         self.app_config = load_app_config(os.getcwd())
         self.app_settings = self.app_config.get("app_settings", {})
-        
-        # Store configuration
+        # Store configuration with proper null checks
         self.config = config or {}
         self.sentry_dsn = sentry_dsn
         self.cors_origins = cors_origins
         
         if app is not None:
             self.init_app(app)
+
+    def run_app(self, app: Flask) -> None:
+        """Run the app."""
+        # Enable debug mode
+        app.debug = True
+        # Run with output unbuffered
+        app.run(host="0.0.0.0", port=2005, debug=True, use_reloader=True, use_debugger=True)
+
 
     def configure_logging(self, app: Flask) -> None:
         """Configure application logging."""
@@ -135,37 +118,8 @@ class Router:
 
     def configure_sentry(self, app: Flask) -> None:
         """Configure Sentry error tracking."""
-        dsn = self.sentry_dsn or self.app_settings.get("sentry_dsn")
-        environment = os.getenv("ENVIRONMENT", "development")
-
-        def strip_locals(event, hint):
-            if event.get("exception", {}).get("values"):
-                for exc in event["exception"]["values"]:
-                    if exc.get("stacktrace", {}).get("frames"):
-                        for frame in exc["stacktrace"]["frames"]:
-                            if "vars" in frame:
-                                del frame["vars"]
-            return event
-
-        try:
-            sentry_sdk.init(
-                dsn=dsn,
-                integrations=[
-                    FlaskIntegration(transaction_style="url")
-                ],
-                traces_sample_rate=1.0,
-                environment=environment,
-                profiles_sample_rate=1.0,
-                attach_stacktrace=True,
-                auto_session_tracking=True,
-                enable_tracing=True,
-                before_send=strip_locals,
-                send_default_pii=False,
-                debug=False
-            )
-            app.logger.info("Sentry initialized successfully")
-        except Exception as e:
-            app.logger.error(f"Failed to initialize Sentry: {e}")
+        dsn = self.config.get("sentry_dsn") or self.app_settings.get("sentry_dsn")
+        init_sentry(app, dsn)
 
     def configure_cors(self, app: Flask) -> None:
         """Configure CORS settings."""
@@ -195,7 +149,8 @@ class Router:
             raise ValueError("Could not determine the module path for the function")
             
         # Get base path from the file's location
-        routes_directory = Path(os.path.join(os.getcwd(), "routes"))
+        directory_name = self.app_settings.get("routes_directory", "routes")
+        routes_directory = Path(os.path.join(os.getcwd(), directory_name))
         module_file_path = Path(function_module.__file__).resolve()
         
         # Check if the module is in the routes directory
@@ -328,31 +283,15 @@ class Router:
         
         @app.errorhandler(ManagedError)
         def handle_managed_error(error: ManagedError):
-            # Log managed errors with traceback
-            logging.error(f"Managed error: {error.error}", exc_info=True)
-            return Response.error(error)
-        
-        @app.errorhandler(Exception)
-        def handle_error(error: Exception):
-            # Get full traceback
-            import traceback
-            tb = traceback.format_exc()
-            
-            # Log the full error with traceback
-            logging.error(
-                f"Unhandled error:\n"
-                f"Error: {str(error)}\n"
-                f"Traceback:\n{tb}"
-            )
+            # Log error and capture in Sentry
             sentry_sdk.capture_exception(error)
-            
-            # Send to Sentry with full context
-            # with sentry_sdk.push_scope() as scope:
-            #     scope.set_extra("traceback", tb)
-            #     sentry_sdk.capture_exception(error)
-            
-            return Response.error(error, status_code=500)
+            return Response.error(error)
 
+        @app.errorhandler(Exception)
+        def handle_unhandled_error(error: Exception):
+            # Log error and capture in Sentry
+            sentry_sdk.capture_exception(error)
+            return Response.error(error, status_code=500)
 
     def _register_core_routes(self, app: Flask) -> None:
         """Register core routes."""
@@ -373,8 +312,9 @@ class Router:
     def init_app(self, app: Flask) -> None:
         """Initialize the router with a Flask app and register all discovered routes."""
         self.app = app
-        
         # Update Flask configuration
+        self.configure_sentry(app)
+
         app.config.update({
             "JSON_SORT_KEYS": False,
             "PROPAGATE_EXCEPTIONS": True,
@@ -384,7 +324,6 @@ class Router:
 
         # Configure components
         self.configure_logging(app)
-        self.configure_sentry(app)
         self.configure_cors(app)
 
         # Register core routes
@@ -428,6 +367,7 @@ class Router:
             def get_org_user_team(org_id, user_id, team_id):
                 return f"Org {org_id}, User {user_id}, Team {team_id}"
         """
+
         def decorator(function: Callable) -> Callable:
             try:
                 # Create route information using helper method

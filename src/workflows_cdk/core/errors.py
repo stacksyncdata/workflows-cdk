@@ -4,8 +4,9 @@ Simplified error handling with automatic logging and Sentry integration.
 
 import logging
 import traceback
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 import pkg_resources
+from dataclasses import dataclass, field
 
 import sentry_sdk
 
@@ -17,52 +18,93 @@ try:
 except Exception:
     CDK_VERSION = "unknown"
 
+@dataclass
 class ManagedError(Exception):
-    """Base class for managed errors with consistent error handling."""
-    
-    def __init__(
-        self,
-        error: Any,
-        data: Optional[Any] = None,
+    """Base class for managed application errors."""
+    error: Union[str, Exception]
+    data: Optional[Dict[str, Any]] = None
+    metadata: Optional[Dict[str, Any]] = None
+    status_code: int = 400
+
+    def __post_init__(self):
+        """Initialize default values for optional fields."""
+        self.data = self.data if self.data is not None else {}
+        self.metadata = self.metadata if self.metadata is not None else {}
+
+    def __str__(self) -> str:
+        """Return string representation of the error."""
+        return str(self.error)
+
+    @classmethod
+    def validation_error(
+        cls,
+        error: str,
+        data: Optional[Dict[str, Any]] = None,
         metadata: Optional[Dict[str, Any]] = None
-    ):
-        """Initialize error with consistent parameters.
-        
-        Args:
-            error: Error message or object (can be any type)
-            data: Additional error data (can be any type)
-            metadata: Error metadata for debugging/tracking (dict)
-        """
-        super().__init__(str(error))
-        self.error = error
-        self.data = data
-        self.metadata = metadata or {}
-        
-        # Add CDK version to metadata
-        self.metadata["cdk_version"] = CDK_VERSION
-        
-        # Add traceback and locals to metadata if not present
-        if "traceback" not in self.metadata:
-            self.metadata["traceback"] = traceback.format_exc()
-            
-        # Get local variables at point of error
-        try:
-            frame = next(
-                (frame for frame in traceback.extract_stack() if frame.filename != __file__),
-                None
-            )
-            if frame:
-                self.metadata["error_location"] = {
-                    "file": frame.filename,
-                    "line": frame.lineno,
-                    "function": frame.name
-                }
-        except Exception:
-            pass
-            
-        # Log error automatically
-        self._log_error()
-    
+    ) -> "ManagedError":
+        """Create a validation error."""
+        return cls(
+            error=error,
+            data=data,
+            metadata=metadata,
+            status_code=400
+        )
+
+
+    @classmethod
+    def not_found(
+        cls,
+        resource: str,
+        identifier: Any,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> "ManagedError":
+        """Create a not found error."""
+        return cls(
+            error=f"{resource} not found: {identifier}",
+            data={"resource": resource, "identifier": identifier},
+            metadata=metadata,
+            status_code=404
+        )
+
+    @classmethod
+    def unauthorized(
+        cls,
+        message: str = "Unauthorized access",
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> "ManagedError":
+        """Create an unauthorized error."""
+        return cls(
+            error=message,
+            metadata=metadata,
+            status_code=401
+        )
+
+    @classmethod
+    def forbidden(
+        cls,
+        message: str = "Access forbidden",
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> "ManagedError":
+        """Create a forbidden error."""
+        return cls(
+            error=message,
+            metadata=metadata,
+            status_code=403
+        )
+
+    @classmethod
+    def server_error(
+        cls,
+        error: Union[str, Exception],
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> "ManagedError":
+        """Create a server error."""
+        return cls(
+            error=error,
+            metadata=metadata,
+            status_code=500
+        )
+
     def _log_error(self):
         """Log error locally and to Sentry."""
         # Log locally with all context
@@ -91,15 +133,6 @@ class ManagedError(Exception):
                         scope.set_extra(key, value)
                         
             sentry_sdk.capture_exception(self)
-    
-    @classmethod
-    def validation_error(cls, error: Any, data: Optional[Any] = None) -> "ManagedError":
-        """Create a validation error."""
-        return cls(
-            error=error,
-            data=data,
-            metadata={"error_type": "validation"}
-        )
     
     @classmethod
     def service_error(
