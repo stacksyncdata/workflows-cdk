@@ -7,7 +7,7 @@ from setuptools import find_packages, setup
 
 setup(
     name="workflows_cdk",
-    version="0.0.1",
+    version="0.1.0",
     description="A CDK for developing Stacksync Workflows Connectors",
     author="Stacksync",
     author_email="oliviero@stacksync.com",
@@ -19,7 +19,7 @@ setup(
         "flask-cors>=4.0.0",
         "python-dotenv>=1.0.0",
         "gunicorn==22.0.0",
-        "sentry-sdk[Flask]==1.26.0",
+        "sentry-sdk[Flask]==2.0.0",
         "pydantic>=2.0.0",
         "pyyaml>=6.0.0"
     ],
