@@ -313,7 +313,12 @@ class Router:
                "description": self.app_config.get("app_description"),
                "routes": self.routes
            })
-            
+        
+        @app.route("/routes", methods=["GET"])
+        def routes():
+            return Response.success(data={
+                "routes": self.routes
+            })
             
     def init_app(self, app: Flask) -> None:
         """Initialize the router with a Flask app and register all discovered routes."""
@@ -331,8 +336,6 @@ class Router:
         self.configure_logging(app)
         self.configure_cors(app)
 
-        # Register core routes
-        self._register_core_routes(app)
         
         # First discover all routes in the project
         self.discover_routes()
@@ -349,6 +352,10 @@ class Router:
                 methods=route_info["methods"],
                 **{k: v for k, v in route_info.items() if k not in ["path", "endpoint", "view_func", "methods"]}
             )
+        
+        # Register core routes
+        self._register_core_routes(app)
+
 
     def route(self, rule: Optional[str] = None, **options: Any) -> Callable:
         """
