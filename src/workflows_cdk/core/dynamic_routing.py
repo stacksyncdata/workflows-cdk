@@ -84,12 +84,15 @@ class Router:
             sentry_dsn: Optional Sentry DSN for error tracking
             cors_origins: Optional list of allowed CORS origins
         """
+
+
         # List to store all discovered routes
         self.routes: List[Dict[str, Any]] = []
         # Flask application instance
         self.app: Optional[Flask] = None
         self._router_instance = self
-        
+
+
         # Load configuration from app_config.yaml
         self.app_config = load_app_config(os.getcwd())
         self.app_settings = self.app_config.get("app_settings", {})
@@ -97,7 +100,7 @@ class Router:
         self.config = config or {}
         self.sentry_dsn = sentry_dsn
         self.cors_origins = cors_origins
-        
+
         if app is not None:
             self.init_app(app)
 
@@ -106,6 +109,8 @@ class Router:
         # Enable debug mode
         app.debug = True
         # Run with output unbuffered
+        logger = logging.getLogger(__name__)
+        logger.info("Running app on port 2005")
         app.run(host="0.0.0.0", port=2005, debug=True, use_reloader=True, use_debugger=True)
 
 
@@ -142,7 +147,6 @@ class Router:
             ValueError: If module path cannot be determined
         """
         options = options or {}
-        
         # Get the file path of the module containing this function
         function_module = inspect.getmodule(function)
         if not function_module or not function_module.__file__:
@@ -202,8 +206,11 @@ class Router:
         # Get the directory where your application is running
         current_working_directory = os.getcwd()
         
+        # Get routes directory from config or use default
+        routes_dir = self.app_settings.get("routes_directory", "routes") if self.app_settings.get("routes_directory") else "routes"
+        
         # Construct the full path to your routes directory
-        routes_directory = Path(os.path.join(current_working_directory, "routes"))
+        routes_directory = Path(os.path.join(current_working_directory, routes_dir))
         if not routes_directory.exists():
             print(f"Routes directory not found at: {routes_directory}")
             return
@@ -258,7 +265,6 @@ class Router:
                                 route_info = getattr(function_object, "__route_info__")
                                 if route_info not in self.routes:
                                     self.routes.append(route_info)
-                                    print(f"Found route: {route_info['path']} with methods: [{','.join(route_info['methods'])}]")
                     
                     # Clean up by removing the temporary path addition
                     if route_parent_directory in sys.path:
@@ -314,7 +320,6 @@ class Router:
         self.app = app
         # Update Flask configuration
         self.configure_sentry(app)
-
         app.config.update({
             "JSON_SORT_KEYS": False,
             "PROPAGATE_EXCEPTIONS": True,
@@ -344,7 +349,6 @@ class Router:
                 methods=route_info["methods"],
                 **{k: v for k, v in route_info.items() if k not in ["path", "endpoint", "view_func", "methods"]}
             )
-            print(f"Successfully registered route: {route_info['path']} with methods: [{','.join(route_info['methods'])}] -> {route_info['endpoint']}")
 
     def route(self, rule: Optional[str] = None, **options: Any) -> Callable:
         """
@@ -389,7 +393,6 @@ class Router:
                         methods=route_info["methods"],
                         **{k: v for k, v in route_info.items() if k not in ["path", "endpoint", "view_func", "methods"]}
                     )
-                    print(f"Registered new route: {route_info['path']} with methods: [{','.join(route_info['methods'])}] -> {route_info['endpoint']}")
                 
             except Exception as error:
                 print(f"Error registering route for {function.__name__}: {error}")
