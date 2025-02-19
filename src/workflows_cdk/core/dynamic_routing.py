@@ -15,11 +15,14 @@ import logging
 import yaml
 from pathlib import Path
 from sentry_sdk.integrations.flask import FlaskIntegration
-from workflows_cdk.core.errors import ManagedError
-from workflows_cdk.core.responses import Response
-from workflows_cdk.core.sentry import init_sentry
+from .errors import ManagedError
+from .responses import Response
+from .sentry import init_sentry
+from .validation import validate_request
 import sentry_sdk
 import traceback
+
+
 
 def load_app_config(app_dir: str) -> Dict[str, Any]:
     """Load application configuration from app_config.yaml."""
@@ -57,7 +60,11 @@ def wrap_route_handler(handler: Callable) -> Callable:
     @wraps(handler)
     def wrapped_handler(*args: Any, **kwargs: Any) -> Any:
         try:
+            # Get required fields from route info if it exists
+            required_fields = getattr(handler, "__route_info__", {}).get("required_fields", [])
+            
             # Execute handler and get response
+            validate_request(flask_request, required_fields)
             response = handler(*args, **kwargs)
             
             # If response is a dict, convert to JSON response
