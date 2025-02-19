@@ -30,20 +30,23 @@ def validate_request(request: Any, required_fields: List[str]):
             raise ManagedError(f"Missing required fields: {', '.join(missing_fields)}")
 
 
+def parse_str_to_json(data):
+    try:    
+        return json.loads(data)
+    except json.JSONDecodeError:
+        raise ValueError("Invalid JSON string")
+
 def validate_and_parse_json(data, field_name):
     if isinstance(data, str):
-        try:
-            return json.loads(data)
-        except json.JSONDecodeError:
-            raise ValueError(f"Invalid JSON string for {field_name}")
+       return parse_str_to_json(data)
     elif isinstance(data, (dict, list)):
         return data
     else:
         raise ValueError(f"{field_name} must be a JSON string, dictionary, or list")
 
 def validate_array(data, field_name):
-    if not isinstance(data, str):
-        json_data = json.loads(data)
+    if isinstance(data, str):
+        json_data = parse_str_to_json(data)
         if not isinstance(json_data, list):
             raise ValueError(f"{field_name} must be an array")
         return json_data
@@ -53,8 +56,8 @@ def validate_array(data, field_name):
         raise ValueError(f"{field_name} must be an array")
 
 def validate_object(data, field_name):
-    if not isinstance(data, str):
-        json_data = json.loads(data)
+    if isinstance(data, str):
+        json_data = parse_str_to_json(data)
         if not isinstance(json_data, dict):
             raise ValueError(f"{field_name} must be an object")
         return json_data

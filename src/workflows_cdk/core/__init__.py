@@ -19,6 +19,7 @@ from .errors import ManagedError
 from .responses import Response
 from .request import Request
 from .dynamic_routing import Router
+from .validation import validate_and_parse_json, validate_array, validate_object, parse_str_to_json
 
 # Create the single global router instance
 
@@ -27,6 +28,10 @@ __all__ = [
     'Request',
     'Response',
     'ManagedError',
-    'Router'
+    'Router',
+    'validate_and_parse_json',
+    'validate_array',
+    'validate_object',
+    'parse_str_to_json'
 ]
  
