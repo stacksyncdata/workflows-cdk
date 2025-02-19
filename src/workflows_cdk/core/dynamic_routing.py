@@ -32,13 +32,23 @@ def load_app_config(app_dir: str) -> Dict[str, Any]:
 
 def log_error_details(app: Flask, error: Union[ManagedError, Exception], is_managed: bool = False) -> Optional[str]:
     """Centralized error logging function."""
-    # Get full traceback
-    exc_info = (type(error), error, error.__traceback__)
+    # Get full traceback from current exception context
+    exc_info = sys.exc_info()
+    if exc_info[0] is None:  # If no current exception context, create one from the error
+        exc_info = (type(error), error, error.__traceback__)
+    
     tb_string = ''.join(traceback.format_exception(*exc_info))
     
     # Log the full traceback
     app.logger.error("\nTraceback:")
     app.logger.error(tb_string)
+    
+    # Capture exception with full context
+    print(f"Error: {error}", )
+    try:
+        sentry_sdk.capture_exception(error)
+    except Exception as e:
+        print(f"Error capturing exception: {e}")
     
     return tb_string
 
@@ -54,19 +64,15 @@ def wrap_route_handler(handler: Callable) -> Callable:
             if isinstance(response, dict):
                 return Response.success(data=response)
             return response
-            
         except ManagedError as managed_error:
-            # Log error details and capture in Sentry
+            # Log error details and let it propagate to the error handler
             log_error_details(current_app, managed_error, is_managed=True)
-            sentry_sdk.capture_exception(managed_error)
-            return Response.error(managed_error)
-            
+            raise
         except Exception as unhandled_error:
-            # Log error details and capture in Sentry
+            # Log error details and let it propagate to the error handler
             log_error_details(current_app, unhandled_error)
-            sentry_sdk.capture_exception(unhandled_error)
-            return Response.error(unhandled_error, status_code=500)
-            
+            raise
+
     return wrapped_handler
 
 class Router:
@@ -85,20 +91,19 @@ class Router:
             cors_origins: Optional list of allowed CORS origins
         """
 
-
         # List to store all discovered routes
         self.routes: List[Dict[str, Any]] = []
         # Flask application instance
         self.app: Optional[Flask] = None
         self._router_instance = self
-
+        self.environment = os.getenv("ENVIRONMENT", "dev")
 
         # Load configuration from app_config.yaml
         self.app_config = load_app_config(os.getcwd())
         self.app_settings = self.app_config.get("app_settings", {})
         # Store configuration with proper null checks
         self.config = config or {}
-        self.sentry_dsn = sentry_dsn
+        self.sentry_dsn = sentry_dsn or self.app_settings.get("sentry_dsn")
         self.cors_origins = cors_origins
 
         if app is not None:
@@ -289,14 +294,10 @@ class Router:
         
         @app.errorhandler(ManagedError)
         def handle_managed_error(error: ManagedError):
-            # Log error and capture in Sentry
-            sentry_sdk.capture_exception(error)
             return Response.error(error)
 
         @app.errorhandler(Exception)
         def handle_unhandled_error(error: Exception):
-            # Log error and capture in Sentry
-            sentry_sdk.capture_exception(error)
             return Response.error(error, status_code=500)
 
     def _register_core_routes(self, app: Flask) -> None:
@@ -352,7 +353,8 @@ class Router:
                 methods=route_info["methods"],
                 **{k: v for k, v in route_info.items() if k not in ["path", "endpoint", "view_func", "methods"]}
             )
-        
+            print(f"Registered route: {route_info['path']} with methods {route_info['methods']}") if self.environment == "dev" or self.environment == "development" else None
+
         # Register core routes
         self._register_core_routes(app)
 

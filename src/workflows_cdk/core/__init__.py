@@ -3,17 +3,17 @@ Core functionality for Stacksync Workflows CDK.
 Provides base classes and utilities for connector development.
 """
 
-import logging
+# import logging
 
-# Configure logging for the CDK
-logger = logging.getLogger('workflows_cdk')
-logger.setLevel(logging.DEBUG)
+# # Configure logging for the CDK
+# logger = logging.getLogger('workflows_cdk')
+# logger.setLevel(logging.DEBUG)
 
-# Add a stream handler if none exists
-if not logger.handlers:
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter('Workflows CDK | %(levelname)s - %(message)s'))
-    logger.addHandler(handler)
+# # Add a stream handler if none exists
+# if not logger.handlers:
+#     handler = logging.StreamHandler()
+#     handler.setFormatter(logging.Formatter('Workflows CDK | %(levelname)s - %(message)s'))
+#     logger.addHandler(handler)
 
 from .errors import ManagedError
 from .responses import Response

@@ -8,6 +8,11 @@ from typing import Any, Dict, Optional
 from flask import Flask, request, current_app
 import sentry_sdk
 from sentry_sdk.integrations.flask import FlaskIntegration
+import sentry_sdk
+from sentry_sdk.integrations.flask import FlaskIntegration
+
+
+
 
 def init_sentry(app: Flask, dsn: Optional[str] = None) -> None:
     """Initialize Sentry with the given configuration."""
@@ -22,9 +27,12 @@ def init_sentry(app: Flask, dsn: Optional[str] = None) -> None:
         integrations=[FlaskIntegration()],
         environment=os.getenv("ENVIRONMENT", "development"),
         traces_sample_rate=1.0,
-        include_local_variables=True,
-        include_source_context=True,
+        profiles_sample_rate=1.0,
+        # before_send=before_send,
+        include_local_variables=True,  # Disable local variables to prevent pickling errors
         attach_stacktrace=True,
-        profiles_sample_rate=1.0
+        send_default_pii=False,
+        include_source_context=True,
+
     )
-    app.logger.info("Sentry initialized successfully")
+    app.logger.info("Sentry initialized successfully with debug mode enabled")
