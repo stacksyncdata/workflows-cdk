@@ -13,13 +13,13 @@ setup(
     author_email="oliviero@stacksync.com",
     install_requires=[
         # Core dependencies
-        "flask==2.0.3",
+        "flask",
         "werkzeug==2.2",
         "pyopenssl==24.1.0",
         "flask-cors>=4.0.0",
         "python-dotenv>=1.0.0",
         "gunicorn==22.0.0",
-        "sentry-sdk[Flask]==2.0.0",
+        "sentry-sdk[Flask]",
         "pydantic>=2.0.0",
         "pyyaml>=6.0.0"
     ],
