@@ -9,7 +9,7 @@ from flask import jsonify, make_response, Response as FlaskResponse
 import os
 from werkzeug.exceptions import HTTPException
 from workflows_cdk.core.errors import ManagedError
-import sentry_sdk
+
 
 class Response:
     """Standardized response class for API endpoints."""
@@ -44,8 +44,7 @@ class Response:
         status_code: int = 400
     ) -> FlaskResponse:
         """Create an error response with environment-appropriate detail level."""
-        # Get the Sentry event ID if available
-        event_id = sentry_sdk.last_event_id()
+       
         
         # Get stack trace for non-production environments
         stack_trace = None
@@ -57,7 +56,7 @@ class Response:
         base_metadata = {
             "timestamp": datetime.now().isoformat(),
             "environment": os.getenv("ENVIRONMENT", "development"),
-            "event_id": event_id,
+            # "event_id": event_id,
             "stack_trace": stack_trace
         }
         
