@@ -121,9 +121,11 @@ class Router:
         # Enable debug mode
         app.debug = True
         # Run with output unbuffered
+        port = self.app_settings.get("port")
         logger = logging.getLogger(__name__)
-        logger.info("Running app on port 2005")
-        app.run(host="0.0.0.0", port=2005, debug=True, use_reloader=True, use_debugger=True)
+        debug_mode = self.app_settings.get("debug",True)
+
+        app.run(host="0.0.0.0", port=port or 2001, debug=debug_mode, use_reloader=debug_mode, use_debugger=debug_mode)
 
 
     def configure_logging(self, app: Flask) -> None:
