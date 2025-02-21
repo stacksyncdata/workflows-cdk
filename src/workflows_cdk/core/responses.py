@@ -16,20 +16,18 @@ class Response:
     
     # Cache environment check
     _IS_PRODUCTION = os.getenv("ENVIRONMENT", "").lower() == "prod"
+
     
     @classmethod
     def success(
         cls,
         data: Any = None,
-        message: str = "Success",
         metadata: Optional[Dict[str, Any]] = None,
         status_code: int = 200
     ) -> FlaskResponse:
         """Create a success response."""
         response_data = {
-            "status": "success",
-            "message": message,
-            "data": data
+            "data": data,
         }
         
         if metadata:
@@ -41,6 +39,8 @@ class Response:
     def error(
         cls,
         error: Union[ManagedError, Exception, str],
+        data: Optional[Dict[str, Any]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
         status_code: int = 400
     ) -> FlaskResponse:
         """Create an error response with environment-appropriate detail level."""
@@ -52,40 +52,61 @@ class Response:
             import traceback
             stack_trace = traceback.format_exc()
         
+        if data:
+            if isinstance(data, str):
+                data = {"error": data}
+
+        if metadata:
+            if isinstance(metadata, str):
+                metadata = {"metadata": metadata}
+
         # Base metadata
         base_metadata = {
             "timestamp": datetime.now().isoformat(),
             "environment": os.getenv("ENVIRONMENT", "development"),
             # "event_id": event_id,
-            "stack_trace": stack_trace
+            "stack_trace": stack_trace if not cls._IS_PRODUCTION else None,
+            **(metadata or {})
         }
         
         # Merge with error metadata if available
         metadata = base_metadata
         if isinstance(error, ManagedError) and error.metadata:
-            metadata = {**base_metadata, **error.metadata}
+            metadata = {**base_metadata, **(error.metadata or {})}
         
         if isinstance(error, ManagedError):
-            response_data = {
-                "status": "error",
+            response_data: Dict[str, Any] = {
                 "error": str(error.error),
-                "data": error.data,
-                "metadata": metadata
             }
+            if error.data:
+                response_data["data"] = error.data
+            if metadata:
+                response_data["metadata"] = metadata
         elif isinstance(error, HTTPException):
             status_code = error.code or status_code
-            response_data = {
-                "status": "error",
+            response_data: Dict[str, Any] = {
                 "error": error.description,
                 "data": {"code": error.code, "name": error.name},
-                "metadata": metadata
             }
+            if metadata:
+                response_data["metadata"] = metadata
         else:
-            response_data = {
-                "status": "error",
+            response_data: Dict[str, Any] = {
                 "error": str(error),
                 "data": {"error_type": type(error).__name__ if isinstance(error, Exception) else "string"},
-                "metadata": metadata
             }
+            if metadata:
+                response_data["metadata"] = metadata
+
+        # Override with provided data and metadata if present
+        if data:
+            response_data["data"] = data if isinstance(data, dict) else {"error": data}
+        elif "data" in response_data and not response_data["data"]:
+            del response_data["data"]
+
+        if metadata:
+            response_data["metadata"] = metadata if isinstance(metadata, dict) else {"metadata": metadata}
+        elif "metadata" in response_data and not response_data["metadata"]:
+            del response_data["metadata"]
             
         return make_response(jsonify(response_data), status_code)
