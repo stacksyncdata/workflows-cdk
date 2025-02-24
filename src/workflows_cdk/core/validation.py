@@ -15,19 +15,27 @@ def validate_request(request: Any, required_fields: List[str]):
     Raises:
         ManagedError: If validation fails
     """
-    if not request.json:
-        raise ManagedError("request body is empty")
+    # Skip validation for schema routes
+    if request.path.endswith('/schema'):
+        return
+        
+    # Skip validation if no required fields
+    if not required_fields:
+        return
+        
+    # Only validate if there's a JSON body
+    if request.is_json and request.json:
+        data = request.json.get("data")
+        credentials = request.json.get("credentials")
 
-    data = request.json["data"]
-    credentials = request.json["credentials"]
-
-    if not data or not credentials:
-        raise ManagedError("Missing required fields: data or credentials")
+        if not data or not credentials:
+            raise ManagedError("Missing required fields: data or credentials")
 
     if required_fields:
         missing_fields = [field for field in required_fields if field not in request.json]
         if missing_fields:
             raise ManagedError(f"Missing required fields: {', '.join(missing_fields)}")
+
 
 
 def parse_str_to_json(data):
