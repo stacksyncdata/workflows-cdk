@@ -33,6 +33,6 @@ def init_sentry(app: Flask, dsn: Optional[str] = None) -> None:
         attach_stacktrace=True,
         send_default_pii=False,
         include_source_context=True,
-
+        debug=False,
     )
-    app.logger.info("Sentry initialized successfully with debug mode enabled")
+    app.logger.info("Sentry initialized successfully")

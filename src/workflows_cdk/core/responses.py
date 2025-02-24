@@ -10,13 +10,32 @@ import os
 from werkzeug.exceptions import HTTPException
 from workflows_cdk.core.errors import ManagedError
 
-
 class Response:
     """Standardized response class for API endpoints."""
     
     # Cache environment check
     _IS_PRODUCTION = os.getenv("ENVIRONMENT", "").lower() == "prod"
 
+    @staticmethod
+    def create_response(
+        data: Any = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        status_code: int = 200
+    ) -> FlaskResponse:
+        """Create a standardized response."""
+        response_data = {"data": data}
+        if metadata:
+            response_data["metadata"] = metadata
+        return make_response(jsonify(response_data), status_code)
+
+    def __new__(
+        cls,
+        data: Any = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        status_code: int = 200
+    ) -> FlaskResponse:
+        """Create a new success response."""
+        return cls.create_response(data, metadata, status_code)
     
     @classmethod
     def success(
@@ -26,14 +45,7 @@ class Response:
         status_code: int = 200
     ) -> FlaskResponse:
         """Create a success response."""
-        response_data = {
-            "data": data,
-        }
-        
-        if metadata:
-            response_data["metadata"] = metadata
-            
-        return make_response(jsonify(response_data), status_code)
+        return cls.create_response(data, metadata, status_code)
     
     @classmethod
     def error(
