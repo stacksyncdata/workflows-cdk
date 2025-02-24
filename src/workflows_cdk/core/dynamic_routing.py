@@ -106,6 +106,24 @@ def create_schema_handler(schema_data: Dict[str, Any]) -> Callable[[], FlaskResp
         return Response(data={"schema": schema_data})
     return schema_handler
 
+def is_production_environment() -> bool:
+    """Check if current environment is production.
+    
+    Returns:
+        bool: True if environment is production, False otherwise
+    """
+    environment = os.getenv("ENVIRONMENT", "dev").lower()
+    return environment in ["prod", "production"]
+
+def log_error(message: str) -> None:
+    """Log error messages in non-production environments only.
+    
+    Args:
+        message: The error message to log
+    """
+    if not is_production_environment():
+        print(message)
+
 def log_error_details(app: Flask, error: Union[ManagedError, Exception], is_managed: bool = False) -> Optional[str]:
     """Centralized error logging function."""
     # Get full traceback from current exception context
@@ -115,16 +133,18 @@ def log_error_details(app: Flask, error: Union[ManagedError, Exception], is_mana
     
     tb_string = ''.join(traceback.format_exception(*exc_info))
     
-    # Log the full traceback
-    app.logger.error("\nTraceback:")
-    app.logger.error(tb_string)
+    # Only log errors in non-production environments
+    if not is_production_environment():
+        # Log the full traceback
+        app.logger.error("\nTraceback:")
+        app.logger.error(tb_string)
+        log_error(f"Error: {error}")
     
-    # Capture exception with full context
-    print(f"Error: {error}", )
+    # Always capture exception with Sentry regardless of environment
     try:
         sentry_sdk.capture_exception(error)
     except Exception as e:
-        print(f"Error capturing exception: {e}")
+        log_error(f"Error capturing exception in Sentry: {e}")
     
     return tb_string
 
@@ -148,6 +168,18 @@ def wrap_route_handler(handler: Callable) -> Callable:
             # Log error details and let it propagate to the error handler
             log_error_details(current_app, managed_error, is_managed=True)
             raise
+        except ValueError as validation_error:
+            # Log validation error details with specific context
+            log_error_details(current_app, validation_error, is_managed=False)
+            # Re-raise as ManagedError to ensure consistent error handling
+            raise ManagedError(
+                error=validation_error,
+                metadata={
+                    "type": "validation_error",
+                    "original_error": str(validation_error)
+                },
+                status_code=400
+            ) from validation_error
         except Exception as unhandled_error:
             # Log error details and let it propagate to the error handler
             log_error_details(current_app, unhandled_error)
@@ -330,7 +362,7 @@ class Router:
         # Construct the full path to your routes directory
         routes_directory = Path(os.path.join(current_working_directory, routes_dir))
         if not routes_directory.exists():
-            print(f"Routes directory not found at: {routes_directory}")
+            log_error(f"Routes directory not found at: {routes_directory}")
             return
 
         # Add the project root to Python path so it can find your modules
@@ -389,7 +421,7 @@ class Router:
                         sys.path.remove(route_parent_directory)
                     
                 except Exception as error:
-                    print(f"Error while processing route file {route_file_path}: {error}")
+                    log_error(f"Error while processing route file {route_file_path}: {error}")
                     
         finally:
             # Restore the original state
@@ -548,7 +580,7 @@ class Router:
                     )
                 
             except Exception as error:
-                print(f"Error registering route for {function.__name__}: {error}")
+                log_error(f"Error registering route for {function.__name__}: {error}")
                 raise
                 
             @wraps(function)
