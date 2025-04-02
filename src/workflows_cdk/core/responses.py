@@ -3,7 +3,7 @@ Response handling module for Flask applications.
 Provides standardized response formatting and error handling.
 """
 
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 from datetime import datetime
 from flask import jsonify, make_response, Response as FlaskResponse
 import os
@@ -45,6 +45,68 @@ class Response:
         status_code: int = 200
     ) -> FlaskResponse:
         """Create a success response."""
+        return cls.create_response(data, metadata, status_code)
+    
+    @classmethod
+    def content(
+        cls,
+        content_objects: List[Any],
+        metadata: Optional[Dict[str, Any]] = None,
+        status_code: int = 200
+    ) -> FlaskResponse:
+        """Create a response with content objects.
+        
+        Args:
+            content_objects: List of ContentObject instances or dictionaries
+            metadata: Optional metadata for the response
+            status_code: HTTP status code
+            
+        Returns:
+            Flask response with content objects
+            
+        Example:
+            ```python
+            @app.route("/content", methods=["POST"])
+            def content():
+                users = [
+                    {
+                        "id": user_id,
+                        "label": user_name
+                    }
+                ]
+                
+                content_objects = [
+                    ContentObject(id="users", data=users)
+                ]
+                
+                return Response.content(content_objects)
+            ```
+        """
+        # Import here to avoid circular imports
+        from workflows_cdk.core.models.content import ContentObject
+        
+        processed_objects = []
+        
+        for obj in content_objects:
+            if isinstance(obj, ContentObject):
+                processed_objects.append(obj.to_dict())
+            elif isinstance(obj, dict):
+                try:
+                    content_obj = ContentObject.from_dict(obj)
+                    processed_objects.append(content_obj.to_dict())
+                except ValueError:
+                    # If it's already in the right format, use it directly
+                    if "id" in obj and "content" in obj:
+                        processed_objects.append(obj)
+            
+        data = {
+            "content_objects": processed_objects,
+            "pagination": {
+                "has_more": False,
+                "next_cursor": None
+            }
+        }
+        
         return cls.create_response(data, metadata, status_code)
     
     @classmethod
