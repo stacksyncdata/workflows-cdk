@@ -212,10 +212,11 @@ class Router:
         # Load configuration from app_config.yaml
         self.app_config = load_app_config(os.getcwd())
         self.app_settings = self.app_config.get("app_settings", {})
+        self.local_development_settings = self.app_config.get("local_development_settings", {})
         # Store configuration with proper null checks
         self.config = config or {}
         self.sentry_dsn = sentry_dsn or self.app_settings.get("sentry_dsn")
-        self.cors_origins = cors_origins
+        self.cors_origins = cors_origins or self.local_development_settings.get("cors_origins")
         self.schema_routes: Dict[str, Dict[str, Any]] = {}
 
         if app is not None:
@@ -226,9 +227,9 @@ class Router:
         # Enable debug mode
         app.debug = True
         # Run with output unbuffered
-        port = self.app_settings.get("port")
+        port = self.local_development_settings.get("port")
         logger = logging.getLogger(__name__)
-        debug_mode = self.app_settings.get("debug",True)
+        debug_mode = self.local_development_settings.get("debug",True)
 
         app.run(host="0.0.0.0", port=port or 2001, debug=debug_mode, use_reloader=debug_mode, use_debugger=debug_mode)
 
@@ -242,12 +243,12 @@ class Router:
 
     def configure_sentry(self, app: Flask) -> None:
         """Configure Sentry error tracking."""
-        dsn = self.config.get("sentry_dsn") or self.app_settings.get("sentry_dsn")
+        dsn = self.sentry_dsn
         init_sentry(app, dsn)
 
     def configure_cors(self, app: Flask) -> None:
         """Configure CORS settings."""
-        origins = self.cors_origins or self.app_settings.get("cors_origins")
+        origins = self.cors_origins
         if origins:
             CORS(app, origins=origins)
 
@@ -272,8 +273,13 @@ class Router:
             raise ValueError("Could not determine the module path for the function")
             
         # Get base path from the file's location
-        directory_name = self.app_settings.get("routes_directory", "routes")
-        routes_directory = Path(os.path.join(os.getcwd(), directory_name))
+        routes_directory_possible_key_names = ["routes_directory_path", "routes_directory", "routes_dir", "routes_path",]
+        # Get routes directory from config using all possible key names or use default
+        routes_dir = next(
+            (self.app_settings[key] for key in routes_directory_possible_key_names if key in self.app_settings),
+            "src/routes"
+        )
+        routes_directory = Path(os.path.join(os.getcwd(), routes_dir))
         module_file_path = Path(function_module.__file__).resolve()
         
         # Check if the module is in the routes directory
@@ -356,9 +362,12 @@ class Router:
         # Get the directory where your application is running
         current_working_directory = os.getcwd()
         
-        # Get routes directory from config or use default
-        routes_dir = self.app_settings.get("routes_directory", "routes") if self.app_settings.get("routes_directory") else "routes"
-        
+        routes_directory_possible_key_names = ["routes_directory_path", "routes_directory", "routes_dir", "routes_path",]
+        # Get routes directory from config using all possible key names or use default
+        routes_dir = next(
+            (self.app_settings[key] for key in routes_directory_possible_key_names if key in self.app_settings),
+            "src/routes"
+        )
         # Construct the full path to your routes directory
         routes_directory = Path(os.path.join(current_working_directory, routes_dir))
         if not routes_directory.exists():
@@ -469,7 +478,12 @@ class Router:
     def register_schema_routes(self, app: Flask) -> None:
         """Register schema routes for all discovered schema files."""
         # Get routes directory from config or use default
-        routes_dir = self.app_settings.get("routes_directory", "routes")
+        routes_directory_possible_key_names = ["routes_directory_path", "routes_directory", "routes_dir", "routes_path",]
+        # Get routes directory from config using all possible key names or use default
+        routes_dir = next(
+            (self.app_settings[key] for key in routes_directory_possible_key_names if key in self.app_settings),
+            "src/routes"
+        )
         routes_path = os.path.join(os.getcwd(), routes_dir)
         
         # Only proceed if auto-registration is enabled
