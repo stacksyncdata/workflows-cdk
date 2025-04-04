@@ -480,13 +480,10 @@ class Router:
         def health_check():
             return Response.success(data={"status": "healthy"})
         
-        @app.route("/app_info", methods=["GET"])
-        def module_info():
+        @app.route("/app-config", methods=["GET"])
+        def app_config():
            return Response.success(data={
-               "name": self.app_config.get("app_name"),
-               "version": self.app_config.get("app_version"),
-               "description": self.app_config.get("app_description"),
-               "routes": self.routes,
+               "app_settings": self.app_settings,
                "modules": self.modules_list
            })
         
