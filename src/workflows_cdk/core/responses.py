@@ -8,13 +8,16 @@ from datetime import datetime
 from flask import jsonify, make_response, Response as FlaskResponse
 import os
 from werkzeug.exceptions import HTTPException
-from workflows_cdk.core.errors import ManagedError
+from .errors import ManagedError
+from .get_environment import get_environment
 
 class Response:
     """Standardized response class for API endpoints."""
     
+    environment = get_environment()
     # Cache environment check
-    _IS_PRODUCTION = os.getenv("ENVIRONMENT", "").lower() == "prod"
+    _IS_PRODUCTION = environment == "prod" or environment == "stage"
+
 
     @staticmethod
     def create_response(

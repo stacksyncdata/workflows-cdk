@@ -20,6 +20,8 @@ from .errors import ManagedError
 from .responses import Response
 from .sentry import init_sentry
 from .validation import validate_request
+from .module_metadata import generate_module_metadata
+from .get_environment import get_environment
 import sentry_sdk
 import traceback
 
@@ -106,14 +108,14 @@ def create_schema_handler(schema_data: Dict[str, Any]) -> Callable[[], FlaskResp
         return Response(data={"schema": schema_data})
     return schema_handler
 
-def is_production_environment() -> bool:
+def is_production_environment(self) -> bool:
     """Check if current environment is production.
     
     Returns:
         bool: True if environment is production, False otherwise
     """
-    environment = os.getenv("ENVIRONMENT", "dev").lower()
-    return environment in ["prod", "production"]
+ 
+    return self.environment in ["prod", "production"]
 
 def log_error(message: str) -> None:
     """Log error messages in non-production environments only.
@@ -204,15 +206,19 @@ class Router:
         """
         # List to store all discovered routes
         self.routes: List[Dict[str, Any]] = []
+        # List to store module metadata
+        self.modules_list: List[Dict[str, Any]] = []
         # Flask application instance
         self.app: Optional[Flask] = None
         self._router_instance = self
-        self.environment = os.getenv("ENVIRONMENT", "dev")
+        self.environment = get_environment()
 
         # Load configuration from app_config.yaml
         self.app_config = load_app_config(os.getcwd())
         self.app_settings = self.app_config.get("app_settings", {})
         self.local_development_settings = self.app_config.get("local_development_settings", {})
+        # Determine app_type
+        self.app_type = self.app_settings.get("app_type", "unknown_app")
         # Store configuration with proper null checks
         self.config = config or {}
         self.sentry_dsn = sentry_dsn or self.app_settings.get("sentry_dsn")
@@ -282,14 +288,28 @@ class Router:
         routes_directory = Path(os.path.join(os.getcwd(), routes_dir))
         module_file_path = Path(function_module.__file__).resolve()
         
-        # Check if the module is in the routes directory
+        # Check if the module is in the routes directory and generate metadata
         try:
             relative_path = module_file_path.relative_to(routes_directory)
             # Generate base path from routes directory structure
             path_parts = list(relative_path.parent.parts)
             base_path = "/" + "/".join(path_parts)
+
+            # --- Module Metadata Generation ---
+            module_dir_rel_str = str(relative_path.parent) # Path relative to routes_directory
+            routes_dir_abs_str = str(routes_directory.resolve())
+            module_metadata = generate_module_metadata(
+                module_dir_rel_str, routes_dir_abs_str, self.app_type
+            )
+            if module_metadata:
+                # Add metadata if not already present (check by module_id)
+                if not any(m["module_id"] == module_metadata["module_id"] for m in self.modules_list):
+                    self.modules_list.append(module_metadata)
+            # --- End Module Metadata Generation ---
+
         except ValueError:
-            # Module is not in routes directory, use provided rule as is
+            # Module is not in routes directory, likely a core or manually placed route.
+            # Use provided rule as is, no automatic metadata generation.
             base_path = ""
             path_parts = []
             
@@ -466,8 +486,13 @@ class Router:
                "name": self.app_config.get("app_name"),
                "version": self.app_config.get("app_version"),
                "description": self.app_config.get("app_description"),
-               "routes": self.routes
+               "routes": self.routes,
+               "modules": self.modules_list
            })
+        
+        @app.route("/modules-list", methods=["GET"])
+        def modules_list():
+            return Response.success(data={"modules": self.modules_list})
         
         @app.route("/routes", methods=["GET"])
         def routes():
@@ -579,8 +604,8 @@ class Router:
                 # Store route info on the function for later discovery
                 setattr(function, "__route_info__", route_info)
                 
-                # Store route for registration if not already stored
-                if route_info not in self.routes:
+                # Check if route path already exists before appending
+                if not any(r['path'] == route_info['path'] for r in self.routes):
                     self.routes.append(route_info)
           
                 # If Flask app is already initialized, register the route immediately
