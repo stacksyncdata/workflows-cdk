@@ -212,17 +212,19 @@ class Router:
         self.app: Optional[Flask] = None
         self._router_instance = self
         self.environment = get_environment()
-
-        # Load configuration from app_config.yaml
         self.app_config = load_app_config(os.getcwd())
+
+
         self.app_settings = self.app_config.get("app_settings", {})
         self.local_development_settings = self.app_config.get("local_development_settings", {})
-        # Determine app_type
+        self.port = self.local_development_settings.get("port") or 2002
+        self.debug = self.local_development_settings.get("debug",True)
+
         self.app_type = self.app_settings.get("app_type", "unknown_app")
-        # Store configuration with proper null checks
+
         self.config = config or {}
-        self.sentry_dsn = sentry_dsn or self.app_settings.get("sentry_dsn")
-        self.cors_origins = cors_origins or self.local_development_settings.get("cors_origins")
+        self.sentry_dsn = sentry_dsn or self.app_settings.get("sentry_dsn") or self.local_development_settings.get("sentry_dsn")
+        self.cors_origins = cors_origins or self.local_development_settings.get("cors_origins") or ["*"]
         self.schema_routes: Dict[str, Dict[str, Any]] = {}
 
         if app is not None:
@@ -233,11 +235,11 @@ class Router:
         # Enable debug mode
         app.debug = True
         # Run with output unbuffered
-        port = self.local_development_settings.get("port")
+        port = self.port
         logger = logging.getLogger(__name__)
-        debug_mode = self.local_development_settings.get("debug",True)
+        debug_mode = self.debug
 
-        app.run(host="0.0.0.0", port=port or 2001, debug=debug_mode, use_reloader=debug_mode, use_debugger=debug_mode)
+        app.run(host="0.0.0.0", port=port, debug=debug_mode, use_reloader=debug_mode, use_debugger=debug_mode)
 
 
     def configure_logging(self, app: Flask) -> None:
