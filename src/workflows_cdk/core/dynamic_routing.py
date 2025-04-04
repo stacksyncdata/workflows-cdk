@@ -220,6 +220,16 @@ class Router:
         self.port = self.local_development_settings.get("port") or 2002
         self.debug = self.local_development_settings.get("debug",True)
 
+
+        routes_directory_possible_key_names = ["routes_directory_path", "routes_directory", "routes_dir", "routes_path",]
+        # Get routes directory from config using all possible key names or use default
+        routes_directory = next(
+            (self.app_settings[key] for key in routes_directory_possible_key_names if key in self.app_settings),
+            "src/routes"
+        )
+
+        self.routes_directory = routes_directory
+
         self.app_type = self.app_settings.get("app_type", "unknown_app")
 
         self.config = config or {}
@@ -275,19 +285,12 @@ class Router:
             ValueError: If module path cannot be determined
         """
         options = options or {}
-        # Get the file path of the module containing this function
         function_module = inspect.getmodule(function)
         if not function_module or not function_module.__file__:
             raise ValueError("Could not determine the module path for the function")
             
-        # Get base path from the file's location
-        routes_directory_possible_key_names = ["routes_directory_path", "routes_directory", "routes_dir", "routes_path",]
-        # Get routes directory from config using all possible key names or use default
-        routes_dir = next(
-            (self.app_settings[key] for key in routes_directory_possible_key_names if key in self.app_settings),
-            "src/routes"
-        )
-        routes_directory = Path(os.path.join(os.getcwd(), routes_dir))
+
+        routes_directory = Path(os.path.join(os.getcwd(), self.routes_directory))
         module_file_path = Path(function_module.__file__).resolve()
         
         # Check if the module is in the routes directory and generate metadata
@@ -381,17 +384,9 @@ class Router:
         Automatically discover and register all routes in the routes directory.
         This method scans your project's routes folder and registers each endpoint it finds.
         """
-        # Get the directory where your application is running
         current_working_directory = os.getcwd()
         
-        routes_directory_possible_key_names = ["routes_directory_path", "routes_directory", "routes_dir", "routes_path",]
-        # Get routes directory from config using all possible key names or use default
-        routes_dir = next(
-            (self.app_settings[key] for key in routes_directory_possible_key_names if key in self.app_settings),
-            "src/routes"
-        )
-        # Construct the full path to your routes directory
-        routes_directory = Path(os.path.join(current_working_directory, routes_dir))
+        routes_directory = Path(os.path.join(current_working_directory, self.routes_directory))
         if not routes_directory.exists():
             log_error(f"Routes directory not found at: {routes_directory}")
             return
@@ -502,13 +497,8 @@ class Router:
     def register_schema_routes(self, app: Flask) -> None:
         """Register schema routes for all discovered schema files."""
         # Get routes directory from config or use default
-        routes_directory_possible_key_names = ["routes_directory_path", "routes_directory", "routes_dir", "routes_path",]
-        # Get routes directory from config using all possible key names or use default
-        routes_dir = next(
-            (self.app_settings[key] for key in routes_directory_possible_key_names if key in self.app_settings),
-            "src/routes"
-        )
-        routes_path = os.path.join(os.getcwd(), routes_dir)
+       
+        routes_path = os.path.join(os.getcwd(), self.routes_directory)
         
         # Only proceed if auto-registration is enabled
         if self.app_settings.get("automatically_register_schema_routes", True):
