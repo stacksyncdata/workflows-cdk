@@ -85,7 +85,10 @@ def find_schema_files(directory: str) -> Dict[str, Dict[str, Any]]:
                 if schema_data:
                     # Calculate the route path based on directory structure
                     rel_path = os.path.relpath(root, directory)
-                    route_path = '/' + rel_path.replace(os.sep, '/')
+                    # Replace spaces with underscores in path parts
+                    path_parts = rel_path.split(os.sep)
+                    path_parts = [part.replace(" ", "_") for part in path_parts]
+                    route_path = '/' + '/'.join(path_parts)
                     if route_path == '/.':  # Handle root directory case
                         route_path = ''
                     schema_files[route_path] = schema_data
@@ -298,6 +301,8 @@ class Router:
             relative_path = module_file_path.relative_to(routes_directory)
             # Generate base path from routes directory structure
             path_parts = list(relative_path.parent.parts)
+            # Replace spaces with underscores in each path part
+            path_parts = [part.replace(" ", "_") for part in path_parts]
             base_path = "/" + "/".join(path_parts)
 
             # --- Module Metadata Generation ---
