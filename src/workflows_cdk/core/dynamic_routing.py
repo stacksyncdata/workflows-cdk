@@ -221,8 +221,8 @@ class Router:
 
         self.app_settings = self.app_config.get("app_settings", {})
         self.local_development_settings = self.app_config.get("local_development_settings", {})
-        self.port = self.local_development_settings.get("port") or 2002
-        self.debug = self.local_development_settings.get("debug",True)
+        self.port = self.local_development_settings.get("port") or self.app_settings.get("port") or 2003
+        self.debug = self.local_development_settings.get("debug",True) or self.app_settings.get("debug",True)
 
 
         routes_directory_possible_key_names = ["routes_directory_path", "routes_directory", "routes_dir", "routes_path",]
