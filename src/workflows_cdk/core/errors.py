@@ -5,18 +5,13 @@ Simplified error handling with automatic logging and Sentry integration.
 import logging
 import traceback
 from typing import Any, Dict, Optional, Union
-import pkg_resources
+from .cdk_version import CDK_VERSION
 from dataclasses import dataclass, field
 
 import sentry_sdk
 
 logger = logging.getLogger(__name__)
 
-# Get CDK version
-try:
-    CDK_VERSION = pkg_resources.get_distribution("workflows-cdk").version
-except Exception:
-    CDK_VERSION = "unknown"
 
 @dataclass
 class ManagedError(Exception):
