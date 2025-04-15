@@ -24,7 +24,7 @@ from .module_metadata import generate_module_metadata
 from .get_environment import get_environment
 import sentry_sdk
 import traceback
-
+from .homepage_template import get_homepage_template
 
 
 def load_app_config(app_dir: str) -> Dict[str, Any]:
@@ -111,13 +111,12 @@ def create_schema_handler(schema_data: Dict[str, Any]) -> Callable[[], FlaskResp
         return Response(data={"schema": schema_data})
     return schema_handler
 
-def is_production_environment(self) -> bool:
+def is_production_environment() -> bool:
     """Check if current environment is production.
     
     Returns:
         bool: True if environment is production, False otherwise
     """
- 
     return get_environment() in ["prod", "production"]
 
 def print_error(message: str) -> None:
@@ -216,32 +215,48 @@ class Router:
         self.app: Optional[Flask] = None
         self._router_instance = self
         self.environment = get_environment()
+        
+        # Initial app config loading
         self.app_config = load_app_config(os.getcwd())
-
-
-        self.app_settings = self.app_config.get("app_settings", {})
-        self.local_development_settings = self.app_config.get("local_development_settings", {})
-        self.port = self.local_development_settings.get("port") or self.app_settings.get("port") or 2003
-        self.debug = self.local_development_settings.get("debug",True) or self.app_settings.get("debug",True)
-
-
-        routes_directory_possible_key_names = ["routes_directory_path", "routes_directory", "routes_dir", "routes_path",]
-        # Get routes directory from config using all possible key names or use default
-        routes_directory = next(
-            (self.app_settings[key] for key in routes_directory_possible_key_names if key in self.app_settings),
-            "src/routes"
-        )
-
-        self.routes_directory = routes_directory
-
-        self.app_type = self.app_settings.get("app_type", "unknown_app")
-
         self.config = config or {}
-        self.sentry_dsn = sentry_dsn or self.app_settings.get("sentry_dsn") or self.local_development_settings.get("sentry_dsn")
-        self.cors_origins = cors_origins or self.local_development_settings.get("cors_origins") or ["*"]
+        self.sentry_dsn = sentry_dsn
+        self.cors_origins = cors_origins or ["*"]
+        
+        # Apply configuration settings
+        self.refresh_app_config_variables(self.app_config)
 
         if app is not None:
             self.init_app(app)
+
+    def refresh_app_config_variables(self, app_config: Dict[str, Any]) -> None:
+        """Apply configuration settings to the router instance.
+        
+        This function centralizes the logic for applying configuration settings,
+        making it reusable across initialization and configuration refreshes.
+        
+        Args:
+            app_config: The application configuration dictionary
+        """
+        # Extract key settings sections
+        self.app_config = app_config
+        self.app_settings = app_config.get("app_settings", {})
+        self.local_development_settings = app_config.get("local_development_settings", {})
+        
+        # Apply core settings
+        self.app_type = self.app_settings.get("app_type", "unknown_app")
+        self.port = self.local_development_settings.get("port") or self.app_settings.get("port") or 2003
+        self.debug = self.local_development_settings.get("debug", True) or self.app_settings.get("debug", True)
+        
+        # Apply Sentry and CORS settings with override priority
+        self.sentry_dsn = self.app_settings.get("sentry_dsn") or self.local_development_settings.get("sentry_dsn")
+        self.cors_origins = self.local_development_settings.get("cors_origins") or ["*"]
+        
+        # Determine routes directory
+        routes_directory_possible_key_names = ["routes_directory_path", "routes_directory", "routes_dir", "routes_path"]
+        self.routes_directory = next(
+            (self.app_settings[key] for key in routes_directory_possible_key_names if key in self.app_settings),
+            "src/routes"
+        )
 
     def run_app(self, app: Flask) -> None:
         """Run the app."""
@@ -540,6 +555,15 @@ class Router:
 
     def _register_core_routes(self, app: Flask) -> None:
         """Register core routes."""
+        @app.route("/", methods=["GET"])
+        def root():
+            # Get the connector name from the app settings
+            connector_name = self.app_settings.get("app_name", "Stacksync Connector")
+            
+            # HTML template with Stacksync logo and connector name
+            html = get_homepage_template(connector_name, self.app_type, self.environment)
+            return html
+
         @app.route("/health", methods=["GET"])
         def health_check():
             return Response.success(data={"status": "healthy"})
@@ -549,11 +573,16 @@ class Router:
             try:
                 # Reload app config to get fresh settings
                 fresh_app_config = load_app_config(os.getcwd())
-                app_settings = fresh_app_config.get("app_settings", {})
-                # Collect route information without importing modules
+                
+                # Apply the fresh configuration
+                self.refresh_app_config_variables(fresh_app_config)
+                
+                # Refresh modules list
                 _, modules_list = self._collect_route_information()
+                
+                # Return updated config
                 return Response.success(data={
-                    "app_settings": app_settings,
+                    "app_settings": self.app_settings,
                     "modules": modules_list
                 })
             except Exception as error:
