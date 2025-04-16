@@ -625,30 +625,72 @@ class Router:
     def register_schema_routes(self, app: Flask) -> None:
         """Register schema routes for all discovered schema files."""
         routes_path = os.path.join(os.getcwd(), self.routes_directory)
-        
+
         # Only proceed if auto-registration is enabled
         if self.app_settings.get("automatically_register_schema_routes", True):
             # Find all schema files
             schema_files = find_schema_files(routes_path)
-            
+
             # Register each schema route
             for route_path, _ in schema_files.items():
-                # Skip if a route already exists
-                schema_route = f"{route_path}/schema"
-                if any(r.get('path') == schema_route for r in self.routes):
-                    continue
-                    
-                # Create and register the route with dynamic schema loading
-                route_info = {
-                    "path": schema_route,
-                    "endpoint": f"schema_{route_path.replace('/', '_')}",
-                    "view_func": self._create_dynamic_schema_handler(route_path),
-                    "methods": ["GET", "POST"]
-                }
-                self.routes.append(route_info)
+                self._register_schema_route(route_path, app)
 
+    def _handle_dynamic_schema_request(self, dynamic_path: str) -> FlaskResponse:
+        """Handle schema requests for paths that might not have been registered at startup.
+        
+        This is a catch-all handler that will check if a schema.json file exists for the
+        requested path and return it if found, even if it was added after startup.
+        
+        Args:
+            dynamic_path: The dynamic part of the path (everything before /schema)
+            
+        Returns:
+            FlaskResponse: The schema response
+        """
+        try:
+            # Construct the full path to the schema file
+            current_working_directory = os.getcwd()
+            routes_directory = os.path.join(current_working_directory, self.routes_directory)
+            schema_file_path = os.path.join(routes_directory, dynamic_path, 'schema.json')
+            
+            # Check if the schema file exists
+            if not os.path.exists(schema_file_path):
+                return Response(
+                    data={"schema": {}, "error": f"Schema not found for {dynamic_path}"}, 
+                    status_code=404
+                )
+            
+            # Load the schema file
+            try:
+                with open(schema_file_path, 'r') as f:
+                    schema_data = json.load(f)
+                
+                # Log discovery of new schema
+                if self.environment in ["dev", "development"]:
+                    if not any(r.get('path') == f"/{dynamic_path}/schema" for r in self.routes):
+                        print(f"Dynamically served schema for new path: /{dynamic_path}/schema")
+                
+                return Response(data={"schema": schema_data})
+            except json.JSONDecodeError:
+                return Response(
+                    data={"schema": {}, "error": f"Invalid schema format for {dynamic_path}"}, 
+                    status_code=400
+                )
+        except Exception as e:
+            # Log and return error
+            print_error(f"Error handling dynamic schema for {dynamic_path}: {e}")
+            return Response.error(
+                error=ManagedError(
+                    error=e,
+                    metadata={"dynamic_path": dynamic_path},
+                    status_code=500
+                )
+            )
+    
     def _create_dynamic_schema_handler(self, route_path: str) -> Callable[[], FlaskResponse]:
         """Create a handler that dynamically loads schema data on each request.
+        
+        For routes registered at startup.
         
         Args:
             route_path: The route path to load schema for
@@ -693,6 +735,40 @@ class Router:
                 )
         return dynamic_schema_handler
 
+    def _register_schema_route(self, route_path: str, app: Optional[Flask] = None) -> None:
+        """Register a schema route for the given path.
+        
+        Args:
+            route_path: The route path to load schema for
+            app: The Flask app to register with (if None, just adds to routes list)
+        """
+        schema_route = f"{route_path}/schema"
+        
+        # Remove any existing route for this schema to ensure re-discovery
+        self.routes = [r for r in self.routes if r.get('path') != schema_route]
+        
+        # Create route info
+        route_info = {
+            "path": schema_route,
+            "endpoint": f"schema_{route_path.replace('/', '_')}",
+            "view_func": self._create_dynamic_schema_handler(route_path),
+            "methods": ["GET", "POST"]
+        }
+        
+        # Add to routes list
+        self.routes.append(route_info)
+        
+        # If app is provided, register the route immediately
+        if app is not None and hasattr(app, 'add_url_rule'):
+            app.add_url_rule(
+                route_info["path"],
+                endpoint=route_info["endpoint"],
+                view_func=route_info["view_func"],
+                methods=route_info["methods"]
+            )
+            if self.environment in ["dev", "development"]:
+                print(f"Registered schema route: {route_info['path']} with methods {route_info['methods']}")
+
     def init_app(self, app: Flask) -> None:
         """Initialize the router with a Flask app and register all discovered routes."""
         self.app = app
@@ -714,6 +790,15 @@ class Router:
         
         # Register schema routes
         self.register_schema_routes(app)
+        
+        # Register a catch-all route for dynamic schema discovery
+        # This will handle any schema requests for paths that don't have explicit routes
+        app.add_url_rule(
+            "/<path:dynamic_path>/schema",
+            endpoint="dynamic_schema_handler",
+            view_func=self._handle_dynamic_schema_request,
+            methods=["GET", "POST"]
+        )
 
         # Register error handlers
         self.register_error_handlers(app)
