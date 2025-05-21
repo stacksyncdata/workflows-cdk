@@ -130,6 +130,7 @@ def print_error(message: str) -> None:
 
 def log_error_details(app: Flask, error: Union[ManagedError, Exception], is_managed: bool = False) -> Optional[str]:
     """Centralized error logging function."""
+    tb_string = ""
     # Get full traceback from current exception context
     try:
         sentry_sdk.capture_exception(error)
