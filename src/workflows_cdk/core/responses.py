@@ -170,20 +170,20 @@ class Response:
         else:
             response_data: Dict[str, Any] = {
                 "error": str(error),
-                "data": {"error_type": type(error).__name__ if isinstance(error, Exception) else "string"},
+                "data": data if data else {},
+                "metadata": metadata if metadata else {},
+                "status_code": status_code if status_code else 400
             }
-            if metadata:
-                response_data["metadata"] = metadata
 
         # Override with provided data and metadata if present
         if data:
             response_data["data"] = data if isinstance(data, dict) else {"error": data}
-        elif "data" in response_data and not response_data["data"]:
-            del response_data["data"]
+        elif "data" in response_data and not response_data.get("data"):
+            response_data["data"] = {}
 
         if metadata:
             response_data["metadata"] = metadata if isinstance(metadata, dict) else {"metadata": metadata}
-        elif "metadata" in response_data and not response_data["metadata"]:
-            del response_data["metadata"]
+        elif "metadata" in response_data and not response_data.get("metadata"):
+            response_data["metadata"] = {}
             
         return make_response(jsonify(response_data), status_code)
