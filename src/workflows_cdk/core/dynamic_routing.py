@@ -25,36 +25,35 @@ from .get_environment import get_environment
 import sentry_sdk
 import traceback
 from .homepage_template import get_homepage_template
+from contextlib import contextmanager
+import gc
+
 
 
 def load_app_config(app_dir: str) -> Dict[str, Any]:
-    """Load application configuration from app_config.yaml."""
+    """Load app config with proper file handle cleanup."""
     config_path = os.path.join(app_dir, "app_config.yaml")
     if not os.path.exists(config_path):
         return {}
         
-    with open(config_path, "r") as f:
-        return yaml.safe_load(f) or {}
+    try:
+        with open(config_path, "r") as f:
+            return yaml.safe_load(f) or {}
+    except (yaml.YAMLError, OSError, ValueError):
+        return {}
 
 def load_schema_file(schema_path: str) -> Optional[Dict[str, Any]]:
-    """Load and validate a schema file.
+    """Load schema file with explicit resource cleanup.
     
-    Args:
-        schema_path: Path to the schema file
-        
-    Returns:
-        Optional[Dict[str, Any]]: The loaded schema or None if invalid/not found
     """
+    if not os.path.exists(schema_path):
+        return None
+        
     try:
-        if not os.path.exists(schema_path):
-            return None
-            
         with open(schema_path, 'r') as f:
             schema_data = json.load(f)
             
-        # Basic schema validation - ensure it's a dict with required fields
         if not isinstance(schema_data, dict):
-            logging.warning(f"Schema file {schema_path} does not contain a valid JSON object")
             return None
             
         return schema_data
@@ -65,51 +64,35 @@ def load_schema_file(schema_path: str) -> Optional[Dict[str, Any]]:
         logging.warning(f"Error loading schema file {schema_path}: {e}")
         return None
 
-def find_schema_files(directory: str) -> Dict[str, Dict[str, Any]]:
-    """Find and load all schema.json files in a directory tree.
+def find_schema_paths(directory: str) -> List[str]:
+    """Find schema.json file paths without loading content.
+
     
     Args:
         directory: Root directory to search from
         
     Returns:
-        Dict[str, Dict[str, Any]]: Map of route paths to their schema data
+        List[str]: List of route paths that have schema files
     """
-    schema_files = {}
+    schema_paths = []
     try:
         for root, _, files in os.walk(directory):
             if 'schema.json' in files:
-                # Load the schema file
-                schema_path = os.path.join(root, 'schema.json')
-                schema_data = load_schema_file(schema_path)
-                
-                if schema_data:
-                    # Calculate the route path based on directory structure
-                    rel_path = os.path.relpath(root, directory)
-                    # Replace spaces with underscores in path parts
-                    path_parts = rel_path.split(os.sep)
-                    path_parts = [part.replace(" ", "_") for part in path_parts]
-                    route_path = '/' + '/'.join(path_parts)
-                    if route_path == '/.':  # Handle root directory case
-                        route_path = ''
-                    schema_files[route_path] = schema_data
+                # Calculate route path without loading the file
+                rel_path = os.path.relpath(root, directory)
+                path_parts = rel_path.split(os.sep)
+                path_parts = [part.replace(" ", "_") for part in path_parts]
+                route_path = '/' + '/'.join(path_parts)
+                if route_path == '/.':
+                    route_path = ''
+                schema_paths.append(route_path)
                     
     except Exception as e:
-        logging.error(f"Error scanning for schema files: {e}")
+        logging.error(f"Error scanning for schema paths: {e}")
         
-    return schema_files
+    return schema_paths
 
-def create_schema_handler(schema_data: Dict[str, Any]) -> Callable[[], FlaskResponse]:
-    """Create a handler function for a schema route.
-    
-    Args:
-        schema_data: The schema data to return
-        
-    Returns:
-        Callable[[], FlaskResponse]: Handler function for the route
-    """
-    def schema_handler() -> FlaskResponse:
-        return Response(data={"schema": schema_data})
-    return schema_handler
+
 
 def is_production_environment() -> bool:
     """Check if current environment is production.
@@ -131,26 +114,26 @@ def print_error(message: str) -> None:
 def log_error_details(app: Flask, error: Union[ManagedError, Exception], is_managed: bool = False) -> Optional[str]:
     """Centralized error logging function."""
     tb_string = ""
-    # Get full traceback from current exception context
+    
+    # Only capture in Sentry once and handle gracefully
     try:
         sentry_sdk.capture_exception(error)
-    except Exception as e:
-        print_error(f"Error capturing exception in Sentry: {e}")
-    
+    except Exception as sentry_error:
+        print_error(f"Error capturing exception in Sentry: {sentry_error}")
     
     # Only log errors in non-production environments
     if not is_production_environment():
-        exc_info = sys.exc_info()
-        if exc_info[0] is None:  # If no current exception context, create one from the error
-            exc_info = (type(error), error, error.__traceback__)
-        
-        tb_string = ''.join(traceback.format_exception(*exc_info))
-        # Log the full traceback
-        app.logger.error("\nTraceback:")
-        app.logger.error(tb_string)
-        print_error(f"Error: {error}")
-    
-    # Always capture exception with Sentry regardless of environment
+        try:
+            exc_info = sys.exc_info()
+            if exc_info[0] is None:  # If no current exception context, create one from the error
+                exc_info = (type(error), error, error.__traceback__)
+            
+            tb_string = ''.join(traceback.format_exception(*exc_info))
+            # Log the full traceback
+            app.logger.error("Traceback: %s", tb_string)
+            print_error(f"Error: {error}")
+        except Exception as log_error:
+            print_error(f"Error during logging: {log_error}")
    
     return tb_string
 
@@ -170,6 +153,7 @@ def wrap_route_handler(handler: Callable) -> Callable:
             if isinstance(response, dict):
                 return Response.success(data=response)
             return response
+            
         except ManagedError as managed_error:
             # Log error details and let it propagate to the error handler
             log_error_details(current_app, managed_error, is_managed=True)
@@ -187,9 +171,16 @@ def wrap_route_handler(handler: Callable) -> Callable:
                 status_code=400
             ) from validation_error
         except Exception as unhandled_error:
-            # Log error details and let it propagate to the error handler
+            # Log unexpected errors and convert to ManagedError
             log_error_details(current_app, unhandled_error)
-            raise
+            raise ManagedError(
+                error=f"Internal server error: {str(unhandled_error)}",
+                metadata={
+                    "type": "internal_error",
+                    "original_error": str(unhandled_error)
+                },
+                status_code=500
+            ) from unhandled_error
 
     return wrapped_handler
 
@@ -263,7 +254,7 @@ class Router:
         """Run the app."""
         # Enable debug mode
         app.debug = True
-        # Run with output unbuffered
+                # Run with output unbuffered
         port = self.port
         logger = logging.getLogger(__name__)
         debug_mode = self.debug
@@ -448,94 +439,131 @@ class Router:
         
         return routes_info, modules_list
 
+    def _route_exists(self, path: str) -> bool:
+        """Check if a route with the given path already exists."""
+        return any(r.get('path') == path for r in self.routes)
+    
+    def _add_route_if_not_exists(self, route_info: Dict[str, Any]) -> bool:
+        """Add route only if it doesn't already exist. Returns True if added."""
+        if not self._route_exists(route_info['path']):
+            self.routes.append(route_info)
+            return True
+        return False
+
+    def clear_accumulated_data(self) -> None:
+        """
+        Clear accumulated data to prevent memory accumulation in serverless environments.
+        """
+        # Keep only essential routes (everything else can be rediscovered)
+        core_paths = ['/health', '/app-config', '/modules-list', '/routes', '/']
+        
+        # Filter out schema routes and user routes (they end with /schema or are user-defined)
+        essential_routes = []
+        for route in self.routes:
+            path = route.get('path', '')
+            # Keep core routes only
+            if path in core_paths:
+                essential_routes.append(route)
+            # Remove schema routes (they'll be re-registered)
+            # Remove user routes (they'll be rediscovered)
+        
+        self.routes = essential_routes
+        
+        # Clear module metadata (it holds file paths and other references)
+        self.modules_list.clear()
+        
+        # Force Python to clean up now (don't wait for automatic GC)
+        gc.collect()
+
     def discover_routes(self) -> None:
         """
-        Automatically discover and register all routes in the routes directory.
-        This method scans your project's routes folder and registers each endpoint it finds.
+        Discover routes while preventing memory accumulation.
+        
+        Key issue: Each discovery loads Python modules that stay in memory forever.
+        In serverless, this grows with each container reuse.
         """
         current_working_directory = os.getcwd()
         
-        # First collect route information without importing
+        # Collect route info without any imports first
         routes_info, module_list = self._collect_route_information()
         
-        # Add collected modules to the module list
+        # Add module metadata (but clear old references first)
         for module in module_list:
             if not any(m.get("module_id") == module["module_id"] for m in self.modules_list):
                 self.modules_list.append(module)
         
         if not routes_info:
             return
-        
-        # Add the project root to Python path so it can find your modules
+
+        # Add working directory to path for imports
         if current_working_directory not in sys.path:
             sys.path.insert(0, current_working_directory)
 
-        # Store the original router instance (if it exists)
-        original_router_module = sys.modules.get('main', None)
-        
-        # Create a temporary main module with our router instance
-        temporary_main_module = types.ModuleType('main')
-        setattr(temporary_main_module, 'router', self)
-        setattr(temporary_main_module, '__file__', os.path.join(current_working_directory, 'main.py'))
-        sys.modules['main'] = temporary_main_module
+        # Use clean import context to prevent module accumulation
+        with clean_module_import():
+            # Set up temporary main module for route discovery
+            original_router_module = sys.modules.get('main', None)
+            temporary_main_module = types.ModuleType('main')
+            setattr(temporary_main_module, 'router', self)
+            setattr(temporary_main_module, '__file__', os.path.join(current_working_directory, 'main.py'))
+            sys.modules['main'] = temporary_main_module
 
-        try:
-            # Process each route file to import modules and register routes
-            for route_info in routes_info:
-                try:
-                    route_file_path = route_info["route_file_path"]
-                    module_name = route_info["module"]
-                    
-                    # Create a module specification for importing
-                    module_spec = importlib.util.spec_from_file_location(module_name, str(route_file_path))
-                    if module_spec is None or module_spec.loader is None:
-                        continue
+            try:
+                # Process each route file to import modules and register routes
+                for route_info in routes_info:
+                    try:
+                        route_file_path = route_info["route_file_path"]
+                        module_name = route_info["module"]
                         
-                    # Create the module and set up its environment
-                    route_module = importlib.util.module_from_spec(module_spec)
-                    sys.modules[module_name] = route_module
-                    
-                    # Add the route file's parent directory to path for relative imports
-                    route_parent_directory = str(route_file_path.parent)
-                    if route_parent_directory not in sys.path:
-                        sys.path.insert(0, route_parent_directory)
+                        # Create a module specification for importing
+                        module_spec = importlib.util.spec_from_file_location(module_name, str(route_file_path))
+                        if module_spec is None or module_spec.loader is None:
+                            continue
+                            
+                        # Create the module and set up its environment
+                        route_module = importlib.util.module_from_spec(module_spec)
+                        sys.modules[module_name] = route_module
                         
-                    # Execute the module to process its contents
-                    module_spec.loader.exec_module(route_module)
-                    
-                    # Find all functions that have been decorated with our route decorator
-                    for function_name, function_object in inspect.getmembers(route_module):
-                        if inspect.isfunction(function_object):
-                            # Check if this function has route information attached
-                            if hasattr(function_object, "__route_info__"):
-                                route_info = getattr(function_object, "__route_info__")
-                                if route_info not in self.routes:
-                                    self.routes.append(route_info)
-                    
-                    # Clean up by removing the temporary path addition
-                    if route_parent_directory in sys.path:
-                        sys.path.remove(route_parent_directory)
-                    
-                except Exception as error:
-                    print_error(f"Error while processing route file {route_file_path}: {error}")
-                    
-        finally:
-            # Restore the original state
-            if original_router_module is not None:
-                sys.modules['main'] = original_router_module
-            else:
-                sys.modules.pop('main', None)
-            
-            # Remove the project root from sys.path
-            if current_working_directory in sys.path:
-                sys.path.remove(current_working_directory)
-    
+                        # Add the route file's parent directory to path for relative imports
+                        route_parent_directory = str(route_file_path.parent)
+                        if route_parent_directory not in sys.path:
+                            sys.path.insert(0, route_parent_directory)
+                            
+                        # Execute the module to process its contents
+                        module_spec.loader.exec_module(route_module)
+                        
+                        # Find all functions that have been decorated with our route decorator
+                        for function_name, function_object in inspect.getmembers(route_module):
+                            if inspect.isfunction(function_object):
+                                # Check if this function has route information attached
+                                if hasattr(function_object, "__route_info__"):
+                                    route_info = getattr(function_object, "__route_info__")
+                                    self._add_route_if_not_exists(route_info)
+                        
+                        # Clean up by removing the temporary path addition
+                        if route_parent_directory in sys.path:
+                            sys.path.remove(route_parent_directory)
+                        
+                    except Exception as error:
+                        print_error(f"Error while processing route file {route_file_path}: {error}")
+                        
+            finally:
+                # Restore the original state
+                if original_router_module is not None:
+                    sys.modules['main'] = original_router_module
+                else:
+                    sys.modules.pop('main', None)
+                
+                # Remove the project root from sys.path
+                if current_working_directory in sys.path:
+                    sys.path.remove(current_working_directory)
+        
     def register_error_handlers(self, app: Flask) -> None:
         """Register error handlers for the application."""
         
         @app.errorhandler(ManagedError)
         def handle_managed_error(error: ManagedError):
-            return Response.error(error)
+                return Response.error(error)
 
         @app.errorhandler(Exception)
         def handle_unhandled_error(error: Exception):
@@ -596,13 +624,26 @@ class Router:
         def modules_list():
             try:
                 # Collect module information without importing modules
-                _, modules_list = self._collect_route_information()
-                return Response.success(data={"modules": modules_list})
+                _, modules_list_data = self._collect_route_information()
+                
+                # Ensure we return a clean response without potential circular references
+                clean_modules = []
+                for module in modules_list_data:
+                    if isinstance(module, dict):
+                        # Only include serializable data
+                        clean_module = {
+                            key: value for key, value in module.items()
+                            if isinstance(value, (str, int, float, bool, list, dict, type(None)))
+                        }
+                        clean_modules.append(clean_module)
+                
+                return Response.success(data={"modules": clean_modules})
             except Exception as error:
-                import traceback
-                print(traceback.format_exc())
                 print_error(f"Error retrieving modules list: {error}")
-                return Response.error(error)
+                return Response.error(
+                    error=f"Failed to retrieve modules list: {str(error)}",
+                    status_code=500
+                )
         
         @app.route("/routes", methods=["GET"])
         def routes():
@@ -624,16 +665,15 @@ class Router:
                 return Response.error(error)
             
     def register_schema_routes(self, app: Flask) -> None:
-        """Register schema routes for all discovered schema files."""
+        """Register schema routes without loading schema content into memory."""
         routes_path = os.path.join(os.getcwd(), self.routes_directory)
 
         # Only proceed if auto-registration is enabled
         if self.app_settings.get("automatically_register_schema_routes", True):
-            # Find all schema files
-            schema_files = find_schema_files(routes_path)
+            schema_paths = find_schema_paths(routes_path)
 
             # Register each schema route
-            for route_path, _ in schema_files.items():
+            for route_path in schema_paths:
                 self._register_schema_route(route_path, app)
 
     def _handle_dynamic_schema_request(self, dynamic_path: str) -> FlaskResponse:
@@ -745,9 +785,6 @@ class Router:
         """
         schema_route = f"{route_path}/schema"
         
-        # Remove any existing route for this schema to ensure re-discovery
-        self.routes = [r for r in self.routes if r.get('path') != schema_route]
-        
         # Create route info
         route_info = {
             "path": schema_route,
@@ -756,11 +793,11 @@ class Router:
             "methods": ["GET", "POST"]
         }
         
-        # Add to routes list
-        self.routes.append(route_info)
+        # Add route only if it doesn't exist (consistent duplicate checking)
+        added = self._add_route_if_not_exists(route_info)
         
-        # If app is provided, register the route immediately
-        if app is not None and hasattr(app, 'add_url_rule'):
+        # If app is provided and route was added, register immediately
+        if app is not None and added and hasattr(app, 'add_url_rule'):
             app.add_url_rule(
                 route_info["path"],
                 endpoint=route_info["endpoint"],
@@ -773,6 +810,12 @@ class Router:
     def init_app(self, app: Flask) -> None:
         """Initialize the router with a Flask app and register all discovered routes."""
         self.app = app
+        
+        self.clear_accumulated_data()
+        
+        self.app_config = load_app_config(os.getcwd())
+        self.refresh_app_config_variables(self.app_config)
+        
         # Update Flask configuration
         self.configure_sentry(app)
         app.config.update({
@@ -849,9 +892,8 @@ class Router:
                 # Store route info on the function for later discovery
                 setattr(function, "__route_info__", route_info)
                 
-                # Check if route path already exists before appending
-                if not any(r['path'] == route_info['path'] for r in self.routes):
-                    self.routes.append(route_info)
+                # Add route only if it doesn't exist
+                self._add_route_if_not_exists(route_info)
           
                 # If Flask app is already initialized, register the route immediately
                 if self.app:
@@ -872,4 +914,29 @@ class Router:
                 return function(*args, **kwargs)
             return wrapper
         return decorator
+
+@contextmanager
+def clean_module_import():
+    """
+    Simple context manager that cleans up imported modules.
+    
+    The real issue: Python keeps ALL imported modules in memory forever.
+    In serverless, this means each route discovery adds to memory permanently.
+    """
+    modules_before = set(sys.modules.keys())
+    path_before = sys.path[:]
+    
+    try:
+        yield
+    finally:
+        # Remove any new modules (they're just route files, don't need to persist)
+        new_modules = set(sys.modules.keys()) - modules_before
+        for module_name in new_modules:
+            sys.modules.pop(module_name, None)
+        
+        # Reset path
+        sys.path[:] = path_before
+        
+        # Force cleanup of module references
+        gc.collect()
 
