@@ -602,11 +602,9 @@ class Router:
         def root():
             # Get the connector name from the app settings
             connector_name = self.app_settings.get("app_name", "Stacksync Connector")
-            # Get modules and sort by module_name
-            _, modules_list = self._collect_route_information()
-            module_names = sorted([m.get("module_name", "") for m in modules_list if m.get("module_name")])
+            
             # HTML template with Stacksync logo and connector name
-            html = get_homepage_template(connector_name, self.app_type, self.environment, module_names)
+            html = get_homepage_template(connector_name, self.app_type, self.environment)
             return html
 
         @app.route("/health", methods=["GET"])
