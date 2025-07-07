@@ -376,10 +376,24 @@ class Router:
             return []
             
         # Find all Python files in routes directory and its subdirectories
-        route_files = [
-            path for path in routes_directory.rglob("*.py") 
-            if path.name != "__init__.py"
-        ]
+        # but exclude files in directories that start with underscore
+        route_files = []
+        for path in routes_directory.rglob("*.py"):
+            if path.name == "__init__.py":
+                continue
+                
+            # Check if any part of the path contains a directory starting with underscore
+            path_parts = path.parts
+            routes_dir_parts = routes_directory.parts
+            
+            # Get the relative parts from routes directory
+            relative_parts = path_parts[len(routes_dir_parts):]
+            
+            # Skip if any directory in the path starts with underscore
+            if any(part.startswith('_') for part in relative_parts[:-1]):  # Exclude the filename itself
+                continue
+                
+            route_files.append(path)
         
         return route_files
         
@@ -588,9 +602,11 @@ class Router:
         def root():
             # Get the connector name from the app settings
             connector_name = self.app_settings.get("app_name", "Stacksync Connector")
-            
+            # Get modules and sort by module_name
+            _, modules_list = self._collect_route_information()
+            module_names = sorted([m.get("module_name", "") for m in modules_list if m.get("module_name")])
             # HTML template with Stacksync logo and connector name
-            html = get_homepage_template(connector_name, self.app_type, self.environment)
+            html = get_homepage_template(connector_name, self.app_type, self.environment, module_names)
             return html
 
         @app.route("/health", methods=["GET"])
@@ -939,4 +955,3 @@ def clean_module_import():
         
         # Force cleanup of module references
         gc.collect()
-
