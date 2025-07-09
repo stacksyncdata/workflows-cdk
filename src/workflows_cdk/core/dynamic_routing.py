@@ -27,6 +27,7 @@ import traceback
 from .homepage_template import get_homepage_template
 from contextlib import contextmanager
 import gc
+import re
 
 
 
@@ -376,25 +377,23 @@ class Router:
             return []
             
         # Find all Python files in routes directory and its subdirectories
-        # but exclude files in directories that start with underscore
+        # Only include .py files that are directly inside a version directory (v1, v2, vX, etc.)
+        version_dir_pattern = re.compile(r"^v[\w\d]+$")
         route_files = []
         for path in routes_directory.rglob("*.py"):
             if path.name == "__init__.py":
                 continue
-                
-            # Check if any part of the path contains a directory starting with underscore
+
+            # Get the relative parts from routes directory
             path_parts = path.parts
             routes_dir_parts = routes_directory.parts
-            
-            # Get the relative parts from routes directory
             relative_parts = path_parts[len(routes_dir_parts):]
-            
-            # Skip if any directory in the path starts with underscore
-            if any(part.startswith('_') for part in relative_parts[:-1]):  # Exclude the filename itself
-                continue
-                
-            route_files.append(path)
-        
+
+            # We want: .../<module>/<version>/file.py (relative_parts = [module, version, file.py])
+            # So only include if len(relative_parts) == 3 and relative_parts[1] matches version pattern
+            if len(relative_parts) == 3 and version_dir_pattern.match(relative_parts[1]):
+                route_files.append(path)
+            # Otherwise, skip (this includes any file in subdirs of version dirs)
         return route_files
         
     def _collect_route_information(self) -> tuple:
