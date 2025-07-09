@@ -27,6 +27,7 @@ import traceback
 from .homepage_template import get_homepage_template
 from contextlib import contextmanager
 import gc
+import re
 
 
 
@@ -376,11 +377,23 @@ class Router:
             return []
             
         # Find all Python files in routes directory and its subdirectories
-        route_files = [
-            path for path in routes_directory.rglob("*.py") 
-            if path.name != "__init__.py"
-        ]
-        
+        # Only include .py files that are directly inside a version directory (v1, v2, vX, etc.)
+        version_dir_pattern = re.compile(r"^v[\w\d]+$")
+        route_files = []
+        for path in routes_directory.rglob("*.py"):
+            if path.name == "__init__.py":
+                continue
+
+            # Get the relative parts from routes directory
+            path_parts = path.parts
+            routes_dir_parts = routes_directory.parts
+            relative_parts = path_parts[len(routes_dir_parts):]
+
+            # We want: .../<module>/<version>/file.py (relative_parts = [module, version, file.py])
+            # So only include if len(relative_parts) == 3 and relative_parts[1] matches version pattern
+            if len(relative_parts) == 3 and version_dir_pattern.match(relative_parts[1]):
+                route_files.append(path)
+            # Otherwise, skip (this includes any file in subdirs of version dirs)
         return route_files
         
     def _collect_route_information(self) -> tuple:
@@ -588,9 +601,11 @@ class Router:
         def root():
             # Get the connector name from the app settings
             connector_name = self.app_settings.get("app_name", "Stacksync Connector")
-            
+            # Get modules and sort by module_name
+            _, modules_list = self._collect_route_information()
+            module_names = sorted([m.get("module_name", "") for m in modules_list if m.get("module_name")])
             # HTML template with Stacksync logo and connector name
-            html = get_homepage_template(connector_name, self.app_type, self.environment)
+            html = get_homepage_template(connector_name, self.app_type, self.environment, module_names)
             return html
 
         @app.route("/health", methods=["GET"])
@@ -939,4 +954,3 @@ def clean_module_import():
         
         # Force cleanup of module references
         gc.collect()
-
