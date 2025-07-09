@@ -1,7 +1,17 @@
-def get_homepage_template(connector_name: str, app_type: str, environment: str) -> str:
+def get_homepage_template(connector_name: str, app_type: str, environment: str, module_names: list = None) -> str:
     """
-    Returns the HTML template for the homepage of the app connector.
+    Returns the HTML template for the homepage of the app connector, including a list of module names if provided.
     """
+    module_list_html = ""
+    if module_names:
+        module_list_html = """
+        <div class="modules-section">
+            <h2>Available Modules</h2>
+            <ul class="modules-list">
+                {} 
+            </ul>
+        </div>
+        """.format("\n".join(f'<li class="module-item">{name}</li>' for name in module_names))
     return f"""
             <!DOCTYPE html>
             <html lang="en">
@@ -150,6 +160,26 @@ def get_homepage_template(connector_name: str, app_type: str, environment: str) 
                         letter-spacing: 0.025em;
                         display: inline-block;
                     }}
+                    
+                    .modules-section {{
+                        margin-top: 2.5rem;
+                        text-align: left;
+                    }}
+                    .modules-section h2 {{
+                        font-size: 1.1rem;
+                        font-weight: 600;
+                        margin-bottom: 0.75rem;
+                        color: var(--text-color);
+                    }}
+                    .modules-list {{
+                        list-style: disc inside;
+                        padding-left: 1.2rem;
+                        color: var(--text-color);
+                    }}
+                    .module-item {{
+                        margin-bottom: 0.3rem;
+                        font-size: 0.97rem;
+                    }}
                 </style>
             </head>
             <body>
@@ -165,6 +195,8 @@ def get_homepage_template(connector_name: str, app_type: str, environment: str) 
                     <a href="https://workflows.stacksync.com" class="workflow-link" target="_blank" rel="noopener">
                         Go to Stacksync Workflows <span class="arrow">↗</span>
                     </a>
+                    
+                    {module_list_html}
                     
                     <div class="footer">
                         Stacksync App Connector | Environment: {environment}
