@@ -1,13 +1,15 @@
 """
 Generates a list of modules based on discovered routes and configuration.
 """
-import os
-import yaml
+
 import logging
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any
 
-def load_yaml_file(file_path: Path) -> Dict[str, Any]:
+import yaml
+
+
+def load_yaml_file(file_path: Path) -> dict[str, Any]:
     """Safely load a YAML file."""
     if not file_path.exists():
         return {}
@@ -21,7 +23,10 @@ def load_yaml_file(file_path: Path) -> Dict[str, Any]:
         logging.warning(f"Error loading YAML file {file_path}: {e}")
         return {}
 
-def generate_module_metadata(module_path_rel_str: str, routes_dir_abs_str: str, app_type: str) -> Optional[Dict[str, Any]]:
+
+def generate_module_metadata(
+    module_path_rel_str: str, routes_dir_abs_str: str, app_type: str
+) -> dict[str, Any] | None:
     """
     Generates information for a single module based on its relative path within the routes directory.
 
@@ -38,29 +43,32 @@ def generate_module_metadata(module_path_rel_str: str, routes_dir_abs_str: str, 
         module_dir_abs = Path(routes_dir_abs_str) / module_path_rel_str
         module_type_path = module_dir_abs.parent
 
-
         config_path = module_dir_abs / "module_config.yaml"
         module_config = load_yaml_file(config_path)
         module_settings = module_config.get("module_settings", {})
 
         module_type = module_settings.get("module_type") or module_type_path.name
         if not module_type:
-            logging.warning(f"Could not determine module_type for path {module_dir_abs}. Skipping.")
+            logging.warning(
+                f"Could not determine module_type for path {module_dir_abs}. Skipping."
+            )
             return None
 
-
         module_category = module_settings.get("module_category", "action")
-        module_name = module_settings.get("module_name") or module_type.replace("_", " ").title()
+        module_name = (
+            module_settings.get("module_name") or module_type.replace("_", " ").title()
+        )
         module_description = module_settings.get("module_description") or ""
 
         module_version = module_settings.get("module_version") or module_dir_abs.name
         module_version = module_version.replace("v", "")
         if not module_version:
-            logging.warning(f"Could not determine module_version for path {module_dir_abs}. Defaulting to 'latest'.")
-            module_version = "latest" 
+            logging.warning(
+                f"Could not determine module_version for path {module_dir_abs}. Defaulting to 'latest'."
+            )
+            module_version = "latest"
 
-
-        formatted_version = str(module_version).replace('.', '_')
+        formatted_version = str(module_version).replace(".", "_")
 
         module_id = f"{app_type}-{module_type}-{formatted_version}"
 
@@ -72,11 +80,13 @@ def generate_module_metadata(module_path_rel_str: str, routes_dir_abs_str: str, 
             "module_name": module_name,
             "module_version": str(module_version),
             "module_description": module_description,
-            "module_path": module_path_rel_str
+            "module_path": module_path_rel_str,
         }
         return module_data
 
     except Exception as e:
         # Log error with the relative path as it's the primary identifier received
-        logging.error(f"Error generating module info for relative path {module_path_rel_str}: {e}")
+        logging.error(
+            f"Error generating module info for relative path {module_path_rel_str}: {e}"
+        )
         return None

@@ -1,0 +1,29 @@
+[tool.black]
+line-length = 88
+target-version = ['py311']
+include = '\.pyi?$'
+# 'extend-exclude' excludes files or directories in addition to the defaults
+extend-exclude = '''
+(
+)
+'''
+
+[tool.basedpyright]
+reportUnusedCallResult = "none"
+reportUnknownMemberType = "none"
+reportUnknownArgumentType = "none"
+reportUnknownVariableType = "none"
+reportMissingParameterType = "none"
+reportUnknownParameterType = "none"
+reportMissingTypeArgument = "none"
+reportMissingTypeStubs = "none"
+reportAny = "none"
+reportUntypedFunctionDecorator = "none"
+reportCallInDefaultInitializer = "none"
+reportImportCycles = "error"
+reportImplicitRelativeImport = "none"
+reportUnknownLambdaType = "none"
+
+[tool.isort]
+profile = "black"
+src_paths = ["isort", "test"]

@@ -1,5 +1,6 @@
 import os
 
+
 def get_environment():
     """
     Get the environment from the environment variable.

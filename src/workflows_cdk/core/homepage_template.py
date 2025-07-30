@@ -1,4 +1,9 @@
-def get_homepage_template(connector_name: str, app_type: str, environment: str, module_names: list = None) -> str:
+def get_homepage_template(
+    connector_name: str,
+    app_type: str,
+    environment: str,
+    module_names: list | None = None,
+) -> str:
     """
     Returns the HTML template for the homepage of the app connector, including a list of module names if provided.
     """
@@ -11,7 +16,9 @@ def get_homepage_template(connector_name: str, app_type: str, environment: str, 
                 {} 
             </ul>
         </div>
-        """.format("\n".join(f'<li class="module-item">{name}</li>' for name in module_names))
+        """.format(
+            "\n".join(f'<li class="module-item">{name}</li>' for name in module_names)
+        )
     return f"""
             <!DOCTYPE html>
             <html lang="en">
@@ -205,3 +212,4 @@ def get_homepage_template(connector_name: str, app_type: str, environment: str, 
             </body>
             </html>
             """
+
