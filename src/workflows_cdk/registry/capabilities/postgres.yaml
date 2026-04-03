@@ -1,0 +1,60 @@
+app:
+  name: PostgreSQL
+  slug: postgres
+  description: "Relational database for structured data storage and queries"
+  auth:
+    type: basic
+    scopes: []
+    fields:
+      - { name: host, type: string, description: "Database host" }
+      - { name: port, type: number, description: "Database port" }
+      - { name: database, type: string, description: "Database name" }
+      - { name: user, type: string, description: "Database user" }
+      - { name: password, type: string, description: "Database password" }
+
+actions:
+  - name: execute_query
+    category: action
+    description: "Execute a SQL query and return results"
+    required_fields:
+      - { name: query, type: string, description: "SQL query to execute" }
+    optional_fields:
+      - { name: params, type: array, description: "Query parameters for prepared statements" }
+
+  - name: insert_row
+    category: action
+    description: "Insert a row into a table"
+    required_fields:
+      - { name: table, type: string, description: "Table name" }
+      - { name: data, type: object, description: "Column-value pairs to insert" }
+
+  - name: update_rows
+    category: action
+    description: "Update rows matching a condition"
+    required_fields:
+      - { name: table, type: string, description: "Table name" }
+      - { name: data, type: object, description: "Column-value pairs to update" }
+      - { name: where, type: string, description: "WHERE clause (without the WHERE keyword)" }
+
+  - name: search_rows
+    category: search
+    description: "Search rows in a table"
+    required_fields:
+      - { name: table, type: string, description: "Table name" }
+    optional_fields:
+      - { name: where, type: string, description: "WHERE clause" }
+      - { name: limit, type: number, description: "Max rows to return" }
+      - { name: order_by, type: string, description: "ORDER BY clause" }
+
+triggers:
+  - name: new_row
+    event: row.inserted
+    description: "Fires when a new row is inserted (polling-based)"
+    payload_fields:
+      - { name: table, type: string }
+      - { name: row, type: object }
+
+examples:
+  - "PostgreSQL connector for querying and inserting data"
+  - "Postgres: execute queries, insert rows, search tables"
+  - "Database connector to read and write Postgres rows"

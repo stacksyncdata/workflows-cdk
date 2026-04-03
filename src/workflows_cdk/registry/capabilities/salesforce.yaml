@@ -1,0 +1,70 @@
+app:
+  name: Salesforce
+  slug: salesforce
+  description: "Enterprise CRM and sales management platform"
+  auth:
+    type: oauth2
+    scopes:
+      - "api"
+      - "refresh_token"
+
+actions:
+  - name: create_lead
+    category: action
+    description: "Create a new lead in Salesforce"
+    required_fields:
+      - { name: LastName, type: string, description: "Lead last name" }
+      - { name: Company, type: string, description: "Company name" }
+    optional_fields:
+      - { name: FirstName, type: string, description: "First name" }
+      - { name: Email, type: string, description: "Email address" }
+      - { name: Phone, type: string, description: "Phone number" }
+
+  - name: create_opportunity
+    category: action
+    description: "Create a new sales opportunity"
+    required_fields:
+      - { name: Name, type: string, description: "Opportunity name" }
+      - { name: StageName, type: string, description: "Current stage" }
+      - { name: CloseDate, type: string, description: "Expected close date (YYYY-MM-DD)" }
+    optional_fields:
+      - { name: Amount, type: number, description: "Deal amount" }
+      - { name: AccountId, type: string, description: "Associated account ID" }
+
+  - name: search_records
+    category: search
+    description: "Search Salesforce records using SOQL"
+    required_fields:
+      - { name: query, type: string, description: "SOQL query string" }
+
+  - name: update_record
+    category: action
+    description: "Update an existing Salesforce record"
+    required_fields:
+      - { name: object_type, type: string, description: "Salesforce object type (Lead, Contact, etc.)" }
+      - { name: record_id, type: string, description: "Record ID" }
+      - { name: fields, type: object, description: "Fields to update" }
+
+triggers:
+  - name: new_lead
+    event: lead.created
+    description: "Fires when a new lead is created"
+    payload_fields:
+      - { name: Id, type: string }
+      - { name: LastName, type: string }
+      - { name: Email, type: string }
+      - { name: Company, type: string }
+
+  - name: opportunity_closed
+    event: opportunity.closed
+    description: "Fires when an opportunity is closed (won or lost)"
+    payload_fields:
+      - { name: Id, type: string }
+      - { name: Name, type: string }
+      - { name: StageName, type: string }
+      - { name: Amount, type: number }
+
+examples:
+  - "Salesforce connector to manage leads and opportunities"
+  - "Create Salesforce leads and search records"
+  - "Salesforce CRM: leads, opportunities, record updates"

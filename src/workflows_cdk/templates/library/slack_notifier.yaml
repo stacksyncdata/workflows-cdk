@@ -1,0 +1,40 @@
+app_type: slack
+app_name: Slack Connector
+version: v1
+
+keywords:
+  - slack
+  - message
+  - channel
+  - notify
+  - notification
+  - chat
+  - alert
+
+auth:
+  type: oauth2
+  scopes:
+    - "chat:write"
+    - "channels:read"
+
+actions:
+  - name: send_message
+    category: action
+    description: "Send a message to a Slack channel or DM"
+    required_fields:
+      - { name: channel, type: string, description: "Channel name or ID" }
+      - { name: text, type: string, description: "Message body" }
+
+  - name: list_channels
+    category: search
+    description: "List all channels in the workspace"
+    required_fields: []
+
+triggers:
+  - name: new_message
+    event: message.created
+    description: "Fires when a new message is posted"
+    payload_fields:
+      - { name: channel, type: string }
+      - { name: text, type: string }
+      - { name: user, type: string }

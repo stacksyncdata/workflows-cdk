@@ -1,0 +1,43 @@
+app_type: openai
+app_name: OpenAI Connector
+version: v1
+
+keywords:
+  - openai
+  - ai
+  - gpt
+  - enrich
+  - enrichment
+  - classify
+  - summarize
+  - embedding
+  - generate
+
+auth:
+  type: api_key
+  scopes: []
+
+actions:
+  - name: chat_completion
+    category: action
+    description: "Generate a chat completion using GPT"
+    required_fields:
+      - { name: prompt, type: string, description: "User message / prompt" }
+    optional_fields:
+      - { name: model, type: string, description: "Model name (default gpt-4o)" }
+      - { name: system_prompt, type: string, description: "System instruction" }
+
+  - name: classify_text
+    category: transform
+    description: "Classify text into categories"
+    required_fields:
+      - { name: text, type: string, description: "Text to classify" }
+      - { name: categories, type: array, description: "List of possible categories" }
+
+  - name: summarize
+    category: transform
+    description: "Summarize a block of text"
+    required_fields:
+      - { name: text, type: string, description: "Text to summarize" }
+
+triggers: []

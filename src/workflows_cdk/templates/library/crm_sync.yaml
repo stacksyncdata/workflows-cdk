@@ -1,0 +1,54 @@
+app_type: hubspot
+app_name: HubSpot Connector
+version: v1
+
+keywords:
+  - hubspot
+  - crm
+  - contact
+  - lead
+  - deal
+  - sales
+  - customer
+
+auth:
+  type: oauth2
+  scopes:
+    - "crm.objects.contacts.read"
+    - "crm.objects.contacts.write"
+    - "crm.objects.deals.read"
+    - "crm.objects.deals.write"
+
+actions:
+  - name: create_contact
+    category: action
+    description: "Create a new CRM contact"
+    required_fields:
+      - { name: email, type: string, description: "Contact email address" }
+    optional_fields:
+      - { name: firstname, type: string, description: "First name" }
+      - { name: lastname, type: string, description: "Last name" }
+
+  - name: update_contact
+    category: action
+    description: "Update an existing contact"
+    required_fields:
+      - { name: contact_id, type: string, description: "HubSpot contact ID" }
+    optional_fields:
+      - { name: email, type: string, description: "Email address" }
+      - { name: firstname, type: string, description: "First name" }
+      - { name: lastname, type: string, description: "Last name" }
+
+  - name: search_contacts
+    category: search
+    description: "Search for contacts"
+    required_fields:
+      - { name: query, type: string, description: "Search query" }
+
+triggers:
+  - name: contact_created
+    event: contact.created
+    description: "Fires when a new contact is created"
+    payload_fields:
+      - { name: id, type: string }
+      - { name: email, type: string }

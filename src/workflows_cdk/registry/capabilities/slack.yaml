@@ -1,0 +1,66 @@
+app:
+  name: Slack
+  slug: slack
+  description: "Team messaging and collaboration platform"
+  auth:
+    type: oauth2
+    scopes:
+      - "chat:write"
+      - "channels:read"
+      - "channels:history"
+      - "reactions:read"
+      - "reactions:write"
+      - "users:read"
+
+actions:
+  - name: send_message
+    category: action
+    description: "Send a message to a Slack channel or DM"
+    required_fields:
+      - { name: channel, type: string, description: "Channel name or ID" }
+      - { name: text, type: string, description: "Message body" }
+    optional_fields:
+      - { name: thread_ts, type: string, description: "Thread timestamp for replies" }
+
+  - name: list_channels
+    category: search
+    description: "List all channels in the workspace"
+    required_fields: []
+
+  - name: add_reaction
+    category: action
+    description: "Add an emoji reaction to a message"
+    required_fields:
+      - { name: channel, type: string, description: "Channel containing the message" }
+      - { name: timestamp, type: string, description: "Message timestamp" }
+      - { name: emoji, type: string, description: "Emoji name without colons" }
+
+  - name: list_users
+    category: search
+    description: "List all users in the workspace"
+    required_fields: []
+
+triggers:
+  - name: new_message
+    event: message.created
+    description: "Fires when a new message is posted in a channel"
+    payload_fields:
+      - { name: channel, type: string }
+      - { name: text, type: string }
+      - { name: user, type: string }
+      - { name: ts, type: string }
+
+  - name: new_reaction
+    event: reaction.added
+    description: "Fires when a reaction is added to a message"
+    payload_fields:
+      - { name: channel, type: string }
+      - { name: user, type: string }
+      - { name: reaction, type: string }
+      - { name: ts, type: string }
+
+examples:
+  - "Slack connector that sends messages to channels"
+  - "Listen for new Slack messages"
+  - "Slack: send messages, list channels, react to new messages"
+  - "Post notifications to Slack"

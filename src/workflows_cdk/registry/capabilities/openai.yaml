@@ -1,0 +1,51 @@
+app:
+  name: OpenAI
+  slug: openai
+  description: "AI models for text generation, embeddings, and classification"
+  auth:
+    type: api_key
+    scopes: []
+    fields:
+      - { name: api_key, type: string, description: "OpenAI API key" }
+
+actions:
+  - name: chat_completion
+    category: action
+    description: "Generate a chat completion using GPT models"
+    required_fields:
+      - { name: prompt, type: string, description: "User message / prompt" }
+    optional_fields:
+      - { name: model, type: string, description: "Model name (default gpt-4o)" }
+      - { name: system_prompt, type: string, description: "System instruction" }
+      - { name: temperature, type: number, description: "Sampling temperature 0-2" }
+      - { name: max_tokens, type: number, description: "Max tokens in response" }
+
+  - name: create_embedding
+    category: transform
+    description: "Create a vector embedding from text"
+    required_fields:
+      - { name: input, type: string, description: "Text to embed" }
+    optional_fields:
+      - { name: model, type: string, description: "Embedding model name" }
+
+  - name: classify_text
+    category: transform
+    description: "Classify text into categories using a prompt"
+    required_fields:
+      - { name: text, type: string, description: "Text to classify" }
+      - { name: categories, type: array, description: "List of possible categories" }
+
+  - name: summarize
+    category: transform
+    description: "Summarize a block of text"
+    required_fields:
+      - { name: text, type: string, description: "Text to summarize" }
+    optional_fields:
+      - { name: max_length, type: number, description: "Target summary length in words" }
+
+triggers: []
+
+examples:
+  - "OpenAI connector for text generation"
+  - "AI enrichment: classify and summarize text"
+  - "OpenAI: generate completions, create embeddings, classify"

@@ -1,0 +1,47 @@
+app_type: stripe
+app_name: Stripe Connector
+version: v1
+
+keywords:
+  - stripe
+  - payment
+  - charge
+  - customer
+  - billing
+  - invoice
+  - subscription
+
+auth:
+  type: api_key
+  scopes: []
+
+actions:
+  - name: create_customer
+    category: action
+    description: "Create a new Stripe customer"
+    required_fields:
+      - { name: email, type: string, description: "Customer email address" }
+    optional_fields:
+      - { name: name, type: string, description: "Customer full name" }
+
+  - name: create_charge
+    category: action
+    description: "Create a payment charge"
+    required_fields:
+      - { name: amount, type: number, description: "Amount in cents" }
+      - { name: currency, type: string, description: "Three-letter ISO currency code" }
+      - { name: customer, type: string, description: "Customer ID" }
+
+  - name: list_customers
+    category: search
+    description: "List Stripe customers"
+    required_fields: []
+
+triggers:
+  - name: payment_succeeded
+    event: payment_intent.succeeded
+    description: "Fires when a payment succeeds"
+    payload_fields:
+      - { name: id, type: string }
+      - { name: amount, type: number }
+      - { name: currency, type: string }

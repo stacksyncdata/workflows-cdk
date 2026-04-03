@@ -1,0 +1,76 @@
+app:
+  name: HubSpot
+  slug: hubspot
+  description: "CRM, marketing, and sales automation platform"
+  auth:
+    type: oauth2
+    scopes:
+      - "crm.objects.contacts.read"
+      - "crm.objects.contacts.write"
+      - "crm.objects.deals.read"
+      - "crm.objects.deals.write"
+      - "crm.objects.companies.read"
+      - "crm.objects.companies.write"
+
+actions:
+  - name: create_contact
+    category: action
+    description: "Create a new CRM contact"
+    required_fields:
+      - { name: email, type: string, description: "Contact email address" }
+    optional_fields:
+      - { name: firstname, type: string, description: "First name" }
+      - { name: lastname, type: string, description: "Last name" }
+      - { name: phone, type: string, description: "Phone number" }
+      - { name: company, type: string, description: "Company name" }
+
+  - name: update_contact
+    category: action
+    description: "Update an existing CRM contact"
+    required_fields:
+      - { name: contact_id, type: string, description: "HubSpot contact ID" }
+    optional_fields:
+      - { name: email, type: string, description: "Email address" }
+      - { name: firstname, type: string, description: "First name" }
+      - { name: lastname, type: string, description: "Last name" }
+      - { name: phone, type: string, description: "Phone number" }
+
+  - name: search_contacts
+    category: search
+    description: "Search for contacts by property values"
+    required_fields:
+      - { name: query, type: string, description: "Search query" }
+
+  - name: create_deal
+    category: action
+    description: "Create a new deal in the pipeline"
+    required_fields:
+      - { name: dealname, type: string, description: "Deal name" }
+      - { name: amount, type: number, description: "Deal amount" }
+    optional_fields:
+      - { name: pipeline, type: string, description: "Pipeline ID" }
+      - { name: dealstage, type: string, description: "Stage ID" }
+
+triggers:
+  - name: contact_created
+    event: contact.created
+    description: "Fires when a new contact is created in HubSpot"
+    payload_fields:
+      - { name: id, type: string }
+      - { name: email, type: string }
+      - { name: firstname, type: string }
+      - { name: lastname, type: string }
+
+  - name: deal_updated
+    event: deal.updated
+    description: "Fires when a deal is updated"
+    payload_fields:
+      - { name: id, type: string }
+      - { name: dealname, type: string }
+      - { name: dealstage, type: string }
+      - { name: amount, type: number }
+
+examples:
+  - "HubSpot connector to manage contacts and deals"
+  - "Create and update HubSpot contacts"
+  - "HubSpot CRM: create contact, search, update, manage deals"

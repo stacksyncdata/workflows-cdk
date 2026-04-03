@@ -130,3 +130,6 @@ dmypy.json
 
 # .vscode
 .vscode/
+
+# Generated connector outputs (test artifacts)
+*-connector/
