@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from typing import Any, Literal
 
 from ..registry.registry import CapabilityRegistry
@@ -127,7 +128,11 @@ class Planner:
     def __init__(self, registry: CapabilityRegistry) -> None:
         self.registry = registry
 
-    def plan(self, description: str) -> ConnectorSpec:
+    def build_prompt(self, description: str) -> tuple[str, str]:
+        """Phase 1: parse intent and build the system prompt (instant).
+
+        Returns (system_prompt, user_message).
+        """
         intent = parse_intent(description, self.registry)
 
         if intent.detected_slugs:
@@ -143,9 +148,16 @@ class Planner:
         system = PLANNER_SYSTEM_PROMPT.format(
             capabilities_json=capabilities_json,
         )
+        return system, description
 
-        raw = _call_llm(system=system, user=description)
+    def call_llm(self, system: str, user: str) -> ConnectorSpec:
+        """Phase 2: call the LLM and parse the spec (slow)."""
+        raw = _call_llm(system=system, user=user)
         return _parse_spec(raw)
+
+    def plan(self, description: str) -> ConnectorSpec:
+        system, user = self.build_prompt(description)
+        return self.call_llm(system, user)
 
     def refine(self, draft: ConnectorSpec, user_answers: str) -> ConnectorSpec:
         system = REFINEMENT_PROMPT.format(
@@ -184,23 +196,29 @@ def _call_anthropic(*, system: str, user: str) -> str:
     if not api_key:
         raise PlannerError("ANTHROPIC_API_KEY environment variable is not set.")
 
-    client = anthropic.Anthropic(api_key=api_key)
+    client = anthropic.Anthropic(api_key=api_key, timeout=120.0)
     model = os.environ.get("WORKFLOWS_AI_MODEL", DEFAULT_ANTHROPIC_MODEL)
-    schema = _build_json_schema()
 
-    resp = client.messages.create(
-        model=model,
-        max_tokens=4096,
-        system=system,
-        messages=[{"role": "user", "content": user}],
-        output_config={
-            "format": {
-                "type": "json_schema",
-                "schema": schema,
-            },
-        },
-        temperature=0.2,
-    )
+    last_exc: Exception | None = None
+    for attempt in range(2):
+        try:
+            resp = client.messages.create(
+                model=model,
+                max_tokens=8192,
+                system=system,
+                messages=[{"role": "user", "content": user}],
+                temperature=0.2,
+            )
+            break
+        except Exception as exc:
+            last_exc = exc
+            if attempt == 0 and "connection" in str(exc).lower():
+                logger.debug("Anthropic connection error, retrying in 2s…")
+                time.sleep(2)
+                continue
+            raise PlannerError(f"Anthropic API error: {exc}") from exc
+    else:
+        raise PlannerError(f"Anthropic API error: {last_exc}") from last_exc
 
     text_blocks = [b.text for b in resp.content if b.type == "text"]
     if not text_blocks:
@@ -247,10 +265,13 @@ def _call_openai(*, system: str, user: str) -> str:
             temperature=0.2,
         )
         return resp.output_text
-    except Exception:
-        logger.debug("Responses API unavailable, falling back to chat completions")
+    except Exception as exc:
+        logger.debug("Responses API unavailable (%s), falling back to chat completions", exc)
 
-    return _chat_completions_fallback(client, model, system, user, schema)
+    try:
+        return _chat_completions_fallback(client, model, system, user, schema)
+    except Exception as exc:
+        raise PlannerError(f"OpenAI API error: {exc}") from exc
 
 
 def _chat_completions_fallback(

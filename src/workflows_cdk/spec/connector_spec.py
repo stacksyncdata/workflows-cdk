@@ -18,6 +18,10 @@ class FieldSpec(BaseModel):
     type: Literal["string", "number", "boolean", "object", "array"] = "string"
     description: str = ""
     required: bool = True
+    widget: str = ""
+    choices: list[dict] = Field(default_factory=list)
+    depends_on: str = ""
+    dynamic_content: bool = False
 
 
 class AuthSpec(BaseModel):

@@ -35,8 +35,8 @@ Return ONLY valid JSON (no markdown fences, no commentary) matching this schema:
       "name":            "string  — snake_case action id",
       "category":        "action | search | transform",
       "description":     "string  — one-sentence description",
-      "required_fields": [{{ "name": "string", "type": "string|number|boolean|object|array", "description": "string" }}],
-      "optional_fields": [{{ "name": "string", "type": "string|number|boolean|object|array", "description": "string" }}],
+      "required_fields": [{{ "name": "string", "type": "string|number|boolean|object|array", "description": "string", "widget": "string (optional)", "choices": [{{}}] (optional), "depends_on": "string (optional)", "dynamic_content": false }}],
+      "optional_fields": [{{ "name": "string", "type": "string|number|boolean|object|array", "description": "string", "widget": "string (optional)", "choices": [{{}}] (optional), "depends_on": "string (optional)", "dynamic_content": false }}],
       "implementation":  "string  — Python code (see <implementation_rules>)"
     }}
   ],
@@ -84,6 +84,26 @@ CRITICAL ALIGNMENT RULE: Every field name used via data.get("field_name") in
 the implementation code MUST exist in required_fields, optional_fields, or
 payload_fields.  If the implementation reads a field, add it to the field list.
 Conversely, every field in the list should be used in the implementation.
+
+EXTENDED FIELD ATTRIBUTES (optional, use when appropriate):
+  - "widget": Override the default UI widget. Common values: "input", "textarea",
+    "checkbox", "SelectWidget", "password".  Default is inferred from type.
+  - "choices": Array of {{id, label}} objects for static dropdown options.
+    Use when the field is type "object" and options are known at generation time.
+    Example: [{{"id": "twitter", "label": "Twitter"}}, {{"id": "linkedin", "label": "LinkedIn"}}]
+  - "dynamic_content": Set to true when the field's dropdown choices must be
+    loaded at runtime via the /content endpoint (e.g. fetched from an external API).
+  - "depends_on": The id of another field that this field's value depends on.
+    When set, the Stacksync UI will reload either /content or /schema when the
+    depended-on field changes.  Only set this when there is a real dependency.
+
+ENDPOINT DECISION RULES:
+  - /execute is ALWAYS generated.
+  - /content is generated ONLY if at least one field has dynamic_content=true.
+  - /schema is generated ONLY if at least one field has depends_on set AND
+    dynamic_content is NOT true for that field (schema reload vs content reload).
+  - Do NOT set dynamic_content or depends_on unless the description clearly implies
+    runtime-dependent choices or form structure changes.
 </field_rules>
 
 <implementation_rules>
@@ -137,11 +157,13 @@ The above would be stored as a single string with \\n for newlines.
 - NEVER ask about things you can infer from context or from the capability
   manifest defaults.
 - If the user mentions an app that is NOT in <available_capabilities>, set
-  confidence to 0.5, include all actions you can reasonably infer, and add one
-  ambiguity noting the app is not in the built-in registry.
+  confidence to 0.5 and include all actions you can reasonably infer from
+  the app's public API.  Do NOT mention the registry in clarification questions.
 </clarification_rules>
 
 <constraints>
+- Generate at most 3 actions + 1 trigger unless the user explicitly asks for
+  more.  Pick the most useful operations for the requested app.
 - Map actions ONLY to capabilities listed in <available_capabilities> when the
   app is known.
 - Default auth type to what the capability manifest specifies.

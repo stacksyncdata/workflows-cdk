@@ -31,6 +31,14 @@ import re
 
 
 
+def _safe_getcwd() -> Optional[str]:
+    """Return cwd if valid; None if the process cwd was deleted (raises FileNotFoundError)."""
+    try:
+        return os.path.abspath(os.getcwd())
+    except (FileNotFoundError, OSError):
+        return None
+
+
 def load_app_config(app_dir: str) -> Dict[str, Any]:
     """Load app config with proper file handle cleanup."""
     config_path = os.path.join(app_dir, "app_config.yaml")
@@ -204,22 +212,58 @@ class Router:
         self.routes: List[Dict[str, Any]] = []
         # List to store module metadata
         self.modules_list: List[Dict[str, Any]] = []
-        # Flask application instance
-        self.app: Optional[Flask] = None
+        # Flask app set early so ``_project_root()`` can use ``app.root_path`` (stable vs getcwd).
+        self.app: Optional[Flask] = app
         self._router_instance = self
+        self._project_root_cache: Optional[str] = None
         self.environment = get_environment()
-        
-        # Initial app config loading
-        self.app_config = load_app_config(os.getcwd())
+
+        # Initial app config loading (avoids bare os.getcwd() — can raise FileNotFoundError)
+        self.app_config = load_app_config(self._project_root())
         self.config = config or {}
         self.sentry_dsn = sentry_dsn
         self.cors_origins = cors_origins or ["*"]
-        
+
         # Apply configuration settings
         self.refresh_app_config_variables(self.app_config)
 
         if app is not None:
             self.init_app(app)
+
+    def _project_root(self) -> str:
+        """Directory containing ``app_config.yaml`` and the routes tree.
+
+        ``os.getcwd()`` can raise ``FileNotFoundError`` if the process cwd was deleted. Prefer
+        ``WORKFLOWS_PROJECT_ROOT`` / ``STACKSYNC_CONNECTOR_ROOT``, then Flask ``root_path``
+        (use ``Flask(__name__)`` in ``main.py``), then cwd, then ``/usr/src/app`` in Docker.
+        """
+        if self._project_root_cache is not None:
+            return self._project_root_cache
+        for key in ("WORKFLOWS_PROJECT_ROOT", "STACKSYNC_CONNECTOR_ROOT"):
+            raw = os.environ.get(key)
+            if raw:
+                p = os.path.abspath(raw)
+                if os.path.isdir(p):
+                    self._project_root_cache = p
+                    return p
+        flask_app = self.app
+        if flask_app is not None:
+            rp = getattr(flask_app, "root_path", None)
+            if rp:
+                p = os.path.abspath(rp)
+                if os.path.isdir(p):
+                    self._project_root_cache = p
+                    return p
+        cwd = _safe_getcwd()
+        if cwd and os.path.isdir(cwd):
+            self._project_root_cache = cwd
+            return cwd
+        docker_default = "/usr/src/app"
+        if os.path.isdir(docker_default):
+            self._project_root_cache = docker_default
+            return docker_default
+        self._project_root_cache = os.path.abspath(".")
+        return self._project_root_cache
 
     def refresh_app_config_variables(self, app_config: Dict[str, Any]) -> None:
         """Apply configuration settings to the router instance.
@@ -301,7 +345,7 @@ class Router:
             raise ValueError("Could not determine the module path for the function")
             
 
-        routes_directory = Path(os.path.join(os.getcwd(), self.routes_directory))
+        routes_directory = Path(os.path.join(self._project_root(), self.routes_directory))
         module_file_path = Path(function_module.__file__).resolve()
         
         # Check if the module is in the routes directory and generate metadata
@@ -369,13 +413,13 @@ class Router:
         Returns:
             list: List of route file paths (Path objects)
         """
-        current_working_directory = os.getcwd()
-        routes_directory = Path(os.path.join(current_working_directory, self.routes_directory))
-        
+        project_root = self._project_root()
+        routes_directory = Path(os.path.join(project_root, self.routes_directory))
+
         if not routes_directory.exists():
             print_error(f"Routes directory not found at: {routes_directory}")
             return []
-            
+
         # Find all Python files in routes directory and its subdirectories
         # Only include .py files that are directly inside a version directory (v1, v2, vX, etc.)
         version_dir_pattern = re.compile(r"^v[\w\d]+$")
@@ -402,9 +446,9 @@ class Router:
         Returns:
             tuple: (routes_info, modules_list) containing metadata
         """
-        current_working_directory = os.getcwd()
-        routes_directory = Path(os.path.join(current_working_directory, self.routes_directory))
-        
+        project_root = self._project_root()
+        routes_directory = Path(os.path.join(project_root, self.routes_directory))
+
         # Lists to store collected data
         routes_info = []
         modules_list = []
@@ -495,22 +539,22 @@ class Router:
         Key issue: Each discovery loads Python modules that stay in memory forever.
         In serverless, this grows with each container reuse.
         """
-        current_working_directory = os.getcwd()
-        
+        project_root = self._project_root()
+
         # Collect route info without any imports first
         routes_info, module_list = self._collect_route_information()
-        
+
         # Add module metadata (but clear old references first)
         for module in module_list:
             if not any(m.get("module_id") == module["module_id"] for m in self.modules_list):
                 self.modules_list.append(module)
-        
+
         if not routes_info:
             return
 
-        # Add working directory to path for imports
-        if current_working_directory not in sys.path:
-            sys.path.insert(0, current_working_directory)
+        # Add project root to path for imports
+        if project_root not in sys.path:
+            sys.path.insert(0, project_root)
 
         # Use clean import context to prevent module accumulation
         with clean_module_import():
@@ -518,7 +562,7 @@ class Router:
             original_router_module = sys.modules.get('main', None)
             temporary_main_module = types.ModuleType('main')
             setattr(temporary_main_module, 'router', self)
-            setattr(temporary_main_module, '__file__', os.path.join(current_working_directory, 'main.py'))
+            setattr(temporary_main_module, '__file__', os.path.join(project_root, 'main.py'))
             sys.modules['main'] = temporary_main_module
 
             try:
@@ -568,8 +612,8 @@ class Router:
                     sys.modules.pop('main', None)
                 
                 # Remove the project root from sys.path
-                if current_working_directory in sys.path:
-                    sys.path.remove(current_working_directory)
+                if project_root in sys.path:
+                    sys.path.remove(project_root)
         
     def register_error_handlers(self, app: Flask) -> None:
         """Register error handlers for the application."""
@@ -616,7 +660,7 @@ class Router:
         def app_config():
             try:
                 # Reload app config to get fresh settings
-                fresh_app_config = load_app_config(os.getcwd())
+                fresh_app_config = load_app_config(self._project_root())
                 
                 # Apply the fresh configuration
                 self.refresh_app_config_variables(fresh_app_config)
@@ -681,7 +725,7 @@ class Router:
             
     def register_schema_routes(self, app: Flask) -> None:
         """Register schema routes without loading schema content into memory."""
-        routes_path = os.path.join(os.getcwd(), self.routes_directory)
+        routes_path = os.path.join(self._project_root(), self.routes_directory)
 
         # Only proceed if auto-registration is enabled
         if self.app_settings.get("automatically_register_schema_routes", True):
@@ -705,8 +749,8 @@ class Router:
         """
         try:
             # Construct the full path to the schema file
-            current_working_directory = os.getcwd()
-            routes_directory = os.path.join(current_working_directory, self.routes_directory)
+            project_root = self._project_root()
+            routes_directory = os.path.join(project_root, self.routes_directory)
             schema_file_path = os.path.join(routes_directory, dynamic_path, 'schema.json')
             
             # Check if the schema file exists
@@ -757,8 +801,8 @@ class Router:
         def dynamic_schema_handler() -> FlaskResponse:
             try:
                 # Get absolute path to schema file
-                current_working_directory = os.getcwd()
-                routes_directory = os.path.join(current_working_directory, self.routes_directory)
+                project_root = self._project_root()
+                routes_directory = os.path.join(project_root, self.routes_directory)
                 schema_file_path = os.path.join(routes_directory, route_path.lstrip('/'), 'schema.json')
                 
                 # Check if file exists
@@ -825,10 +869,11 @@ class Router:
     def init_app(self, app: Flask) -> None:
         """Initialize the router with a Flask app and register all discovered routes."""
         self.app = app
-        
+        self._project_root_cache = None
+
         self.clear_accumulated_data()
-        
-        self.app_config = load_app_config(os.getcwd())
+
+        self.app_config = load_app_config(self._project_root())
         self.refresh_app_config_variables(self.app_config)
         
         # Update Flask configuration

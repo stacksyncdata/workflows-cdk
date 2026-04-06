@@ -98,8 +98,17 @@ def _load_templates() -> list[_Template]:
     return templates
 
 
-def match_template(description: str) -> Optional[ConnectorSpec]:
-    """Return the best-matching template as a ``ConnectorSpec``, or *None*."""
+class MatchResult:
+    """Wraps a template match with explanation metadata."""
+
+    def __init__(self, spec: ConnectorSpec, template_name: str, matched_keywords: list[str]) -> None:
+        self.spec = spec
+        self.template_name = template_name
+        self.matched_keywords = matched_keywords
+
+
+def match_template(description: str) -> Optional[MatchResult]:
+    """Return the best-matching template as a ``MatchResult``, or *None*."""
     tokens = set(description.lower().split())
     templates = _load_templates()
     if not templates:
@@ -107,13 +116,20 @@ def match_template(description: str) -> Optional[ConnectorSpec]:
 
     best: Optional[_Template] = None
     best_score = 0
+    best_overlap: list[str] = []
     for tpl in templates:
         s = tpl.score(tokens)
         if s > best_score:
             best_score = s
             best = tpl
+            corpus = set(tpl.keywords) | {tpl.slug}
+            best_overlap = sorted(tokens & corpus)
 
     if best is None or best_score == 0:
         return None
 
-    return best.to_connector_spec()
+    return MatchResult(
+        spec=best.to_connector_spec(),
+        template_name=best.slug,
+        matched_keywords=best_overlap,
+    )

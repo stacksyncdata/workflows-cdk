@@ -1,16 +1,34 @@
 # Workflows CDK
 
-A powerful CDK (Connector Development Kit) for building Stacksync Workflows Connectors with Python and Flask.
+A CDK (Connector Development Kit) for building **Stacksync Workflows** connectors with **Python** and **Flask**, plus a **`workflows`** CLI for AI-assisted scaffolding and day-to-day tasks.
 
 ## Features
 
-- 🚀 Automatic route discovery and registration file based (like in Next.js!)
-- 🔒 Built-in error handling and Sentry integration
-- 📦 Standardized request/response handling
-- 🛠️ Error management with standardized error handling
-- 🔄 Environment-aware configuration
-- 🤖 AI-powered connector scaffolding via CLI (OpenAI or Anthropic)
-- 📚 Built-in capability registry for Slack, Stripe, HubSpot, Salesforce, OpenAI, PostgreSQL
+**Runtime (library)**
+
+- 🚀 File-based route discovery under `src/modules/` (like the [app connector template](https://github.com/stacksyncdata/workflows-app-connector-template))
+- 🔒 Built-in error handling and optional Sentry integration
+- 📦 Standardized `Request` / `Response` handling
+- 🔄 Environment-aware configuration via `app_config.yaml`
+
+**CLI (`workflows` command)**
+
+- 🤖 Generate connectors or modules from a short natural-language description (`workflows create`)
+- 📋 Interactive **main menu** when you run `workflows` with no arguments
+- ➕ **Update** an existing project with new modules (`create --module-only`, also from the menu)
+- ✅ **Validate** a connector folder (`validate`, with path prompt in the menu)
+- 🖥️ **Run locally** from the menu (`run_dev.sh` or `python main.py`)
+- 🌐 **Expose with ngrok** from the menu (starts the app on the configured port when needed, then tunnel)
+- 📍 **Region** from the project `.env` shown in the UI (keep Studio and workflows in the same region)
+- 📖 **`workflows guide`** — short help for run, ngrok, register, test
+- 🔎 **`workflows list`** / **`workflows inspect`** — browse built-in capability manifests
+
+## Prerequisites
+
+- **Python 3.10+**
+- **Docker** — recommended for `./run_dev.sh` (same flow as the official template)
+- **ngrok** — optional; install from [ngrok.com](https://ngrok.com/download) if you use menu option **Expose with ngrok**
+- **Anthropic or OpenAI API key** — optional; required for AI generation (otherwise use `--no-ai` or template matching)
 
 ## Installation
 
@@ -18,141 +36,155 @@ A powerful CDK (Connector Development Kit) for building Stacksync Workflows Conn
 pip install workflows-cdk
 ```
 
-## Configuration
+## Quick start
 
-On first run, the CLI will ask you to pick a provider and paste your API key:
-
-```
-$ workflows create "Slack connector"
-
-╭─ Welcome to Workflows CDK ──────────────────────────╮
-│ No API key found. Let's set one up.                  │
-│ You can reconfigure anytime with workflows setup.    │
-╰──────────────────────────────────────────────────────╯
-
-Which AI provider? [anthropic/openai] (anthropic):
-Paste your ANTHROPIC_API_KEY (sk-ant-...): sk-ant-xxxxx
-
-Done! ANTHROPIC_API_KEY saved to .env
-```
-
-You can also configure manually:
+### 1. Create a connector
 
 ```bash
-# Interactive setup / reconfigure
+workflows create "Klaviyo connector with API key"
+```
+
+Confirm at the preview, choose overwrite/version if prompted, then open the generated folder (name is derived from your description, e.g. `klaviyo-connector`).
+
+If you have no API key, the CLI can run **`workflows setup`** or fall back to template matching.
+
+### 2. Run it locally
+
+```bash
+cd klaviyo-connector   # use your generated folder name
+pip install -r requirements.txt
+./run_dev.sh
+```
+
+Default URL: `http://localhost:2003` (change port in `app_config.yaml` if needed).
+
+### 3. Expose and register in Stacksync
+
+- Use **Expose with ngrok** from the post-create menu, or run: `ngrok http 2003` (use your real port).
+- Copy the **HTTPS** URL into **Stacksync Developer Studio**.
+- Use the **same `REGION`** in Studio and in workflows as in the project `.env` (e.g. `REGION=besg`).
+
+If Studio says the URL already exists, start a **new** ngrok session for a new URL, or remove/edit the existing private app.
+
+### 4. (Optional) Open the full menu anytime
+
+```bash
+workflows
+```
+
+Pick **1–8** at the prompt (enter a **path** only when the menu asks for it).
+
+---
+
+## Interactive main menu
+
+Run:
+
+```bash
+workflows
+```
+
+| # | Option | What to do |
+|---|--------|------------|
+| **1** | Create a connector | Enter a description; same flow as `workflows create "…"` |
+| **2** | Update a connector | Enter project path, then what to add → adds modules only |
+| **3** | Validate a project | Enter connector root path |
+| **4** | Run connector locally | Enter path → `run_dev.sh` or `python main.py` |
+| **5** | Expose with ngrok | Enter path → app started if needed, then ngrok; copy the HTTPS URL |
+| **6** | View documentation | Opens the custom connector guide in the browser |
+| **7** | Setup AI provider | Configure Anthropic / OpenAI key (saved to `.env` in the current directory) |
+| **8** | Exit | Leave the menu |
+
+After each action, press **Enter** when asked to return to the menu.
+
+---
+
+## After `workflows create` — next steps menu
+
+| # | Option | What to do |
+|---|--------|------------|
+| **1** | Run the connector | `run_dev.sh` or `python main.py` in the new project |
+| **2** | Expose with ngrok | Same as main menu **5**, using the new project automatically |
+| **3** | Open documentation | Opens Stacksync developer docs |
+| **4** | Exit | Close this menu |
+
+The panel shows your **Stacksync region** from the generated `.env`.
+
+---
+
+## Command reference
+
+| Command | Use it to… |
+|---------|------------|
+| `workflows` | Open the interactive main menu |
+| `workflows create "<description>"` | Generate a new connector (or use `-o` for parent directory) |
+| `workflows create --dry-run` | Preview without writing files |
+| `workflows create --no-ai` | Template matching only (no LLM) |
+| `workflows create --module-only` | Add modules into an existing connector directory (`-o` = that directory) |
+| `workflows validate` | Validate the current directory |
+| `workflows validate -p <path>` | Validate a specific connector root |
+| `workflows setup` | Configure AI provider and API key |
+| `workflows list` | List built-in app slugs in the registry |
+| `workflows inspect <slug>` | Show actions/triggers for one app |
+| `workflows guide run` | Print how to run locally |
+| `workflows guide ngrok` | Print how to expose with ngrok |
+| `workflows guide register` | Print how to register in Developer Studio |
+| `workflows guide test` | Print how to test in a workflow |
+
+---
+
+## AI configuration
+
+Set keys in the environment or in a `.env` file in the directory where you run the CLI:
+
+| Variable | Purpose |
+|----------|---------|
+| `ANTHROPIC_API_KEY` | Claude (default when set) |
+| `OPENAI_API_KEY` | OpenAI |
+| `WORKFLOWS_AI_PROVIDER` | `anthropic` or `openai` if both keys are set |
+| `WORKFLOWS_AI_MODEL` | Override the default model |
+
+Or run:
+
+```bash
 workflows setup
-
-# Or set keys directly via .env
-echo 'ANTHROPIC_API_KEY=sk-ant-your-key-here' > .env
-
-# Or export in your shell
-export ANTHROPIC_API_KEY=sk-ant-your-key-here
 ```
 
-Both `.env` and environment variables work. Environment variables take priority.
+---
 
-| Variable | Required | Description |
-|---|---|---|
-| `ANTHROPIC_API_KEY` | One of these | Anthropic API key — uses Claude Sonnet 4.6 by default |
-| `OPENAI_API_KEY` | One of these | OpenAI API key — uses GPT-5 Nano by default |
-| `WORKFLOWS_AI_PROVIDER` | No | Force a provider when both keys are set: `anthropic` or `openai` |
-| `WORKFLOWS_AI_MODEL` | No | Override the default model (default: `claude-sonnet-4-6` or `gpt-5-nano`) |
-| `ENVIRONMENT` | No | Runtime environment: `dev`, `stage`, or `prod` |
+## Generated project layout
 
-No API key? Use `--no-ai` to create connectors via built-in template matching instead.
-
-## Quick Start
-
-### AI-powered (recommended)
-
-Create a connector in one command:
-
-```bash
-workflows create "Slack connector: send messages, list channels"
-```
-
-A complete project appears in `./slack-connector/` with working Flask routes, schemas, and config -- ready to run with `python main.py`.
-
-More examples:
-
-```bash
-# Preview without writing files
-workflows create "HubSpot CRM: create contacts, search, manage deals" --dry-run
-
-# Template matching only (no API key needed)
-workflows create "Slack: send messages, list channels" --no-ai
-
-# Specify output directory
-workflows create "PostgreSQL: query, insert, search rows" -o ./connectors
-
-# List available capabilities
-workflows list
-
-# Inspect a specific app
-workflows inspect slack
-```
-
-### Manual setup
-
-1. Create a new project directory:
-
-```bash
-mkdir my-workflow-connector
-cd my-workflow-connector
-```
-
-2. Install the required dependencies:
-
-```bash
-pip install workflows-cdk flask pyyaml
-```
-
-3. Create the basic project structure:
+Generated projects follow the [app connector template](https://github.com/stacksyncdata/workflows-app-connector-template) layout:
 
 ```
-my-workflow-connector/
+my-connector/
 ├── main.py
 ├── app_config.yaml
 ├── requirements.txt
-└── routes/
-    └── hello/
+├── README.md
+├── .env
+├── .gitignore
+├── Dockerfile
+├── entrypoint.sh
+├── run_dev.sh
+├── run_dev.bat
+├── config/
+│   ├── Dockerfile.dev
+│   ├── entrypoint.sh
+│   └── gunicorn_config.py
+└── src/modules/
+    └── <action_name>/
         └── v1/
-            └── route.py
+            ├── route.py
+            ├── schema.json
+            └── module_config.yaml
 ```
 
-4. Set up your `app_config.yaml`:
+---
 
-```yaml
-app_settings:
-  app_type: "example"
-  app_name: "My Workflow Connector"
-  app_description: "A simple workflow connector"
-  sentry_dsn: "your-sentry-dsn" # Optional
-  cors_origins: ["*"]
-  routes_directory: "routes"
-  debug: true
-  host: "0.0.0.0"
-  port: 2005
-```
+## Writing routes
 
-5. Create your `main.py`:
-
-```python
-from flask import Flask
-from workflows_cdk import Router
-
-# Create Flask app
-app = Flask("my-workflow-connector")
-
-# Initialize router with configuration
-router = Router(app)
-
-# Run the app
-if __name__ == "__main__":
-    router.run_app(app)
-```
-
-6. Create your first route in `routes/send_message/v1/route.py`:
+Each module’s `route.py` uses the CDK helpers. Minimal pattern:
 
 ```python
 from workflows_cdk import Request, Response, ManagedError
@@ -160,127 +192,26 @@ from main import router
 
 @router.route("/execute", methods=["POST"])
 def execute():
-    """Execute the send message action."""
-    request = Request(flask_request)
-    data = request.data
-
-    name = data.get("name", "World")
-    return Response.success(data={
-        "message": f"Hello, {name}!"
-    })
+    req = Request(flask_request)
+    data = req.data
+    credentials = req.credentials
+    # … call your API …
+    return Response(data={"result": "ok"})
 ```
 
-## Core Components
+For validation, not-found, and auth errors, use `ManagedError` helpers as in the [package examples](https://github.com/stacksyncdata/workflows-cdk/blob/prod/README.md#error-handling).
 
-### Router
+---
 
-The `Router` class is the heart of the CDK, providing:
+## Documentation & resources
 
-- Automatic route discovery based on file system structure
-- Built-in error handling and Sentry integration
-- CORS configuration
-- Health check endpoints
-- API documentation
+- [Build a custom connector](https://docs.stacksync.com/workflow-automation/developers/build-a-custom-connector)
+- [Workflows app connector](https://docs.stacksync.com/workflows/app-connector)
+- [Official connector template](https://github.com/stacksyncdata/workflows-app-connector-template)
+- [Stacksync docs](https://docs.stacksync.com/)
 
-### Request
-
-The `Request` class wraps Flask's request object, providing:
-
-- Easy access to request data and credentials
-- Automatic JSON parsing
-- Type-safe access to common properties
-
-### Response
-
-The `Response` class provides standardized response formatting:
-
-- Success responses with optional metadata
-- Error responses with appropriate status codes
-- Environment-aware error details
-- Sentry integration
-
-### ManagedError
-
-The `ManagedError` class provides structured error handling:
-
-- Type-safe error creation
-- Automatic Sentry reporting
-- Environment-aware error details
-- Common error types (validation, not found, unauthorized, etc.)
-
-## Project Structure
-
-Recommended project structure for a workflow connector:
-
-```
-my-workflow-connector/
-├── main.py                 # Application entry point
-├── app_config.yaml         # Application configuration
-├── requirements.txt        # Python dependencies
-├── README.md              # Project documentation
-├── Dockerfile             # Container configuration
-├── .env                   # Environment variables
-└── routes/                # Route modules
-    └── action_name/       # Group routes by action
-        ├── v1/            # Version 1 of the action
-        │   ├── route.py   # Route implementation
-        │   └── schema.json # JSON Schema for validation
-        └── v2/            # Version 2 of the action
-            ├── route.py
-            └── schema.json
-```
-
-## Error Handling
-
-The CDK provides comprehensive error handling:
-
-```python
-from workflows_cdk import ManagedError
-
-# Validation error
-raise ManagedError.validation_error(
-    error="Invalid input",
-    data={"field": "email"}
-)
-
-# Not found error
-raise ManagedError.not_found(
-    resource="User",
-    identifier="123"
-)
-
-# Authorization error
-raise ManagedError.unauthorized(
-    message="Invalid API key"
-)
-
-# Server error
-raise ManagedError.server_error(
-    error="Database connection failed"
-)
-```
-
-## Response Formatting
-
-Standardized response formatting:
-
-```python
-from workflows_cdk import Response
-
-# Success response
-return Response.success(
-    data={"result": "ok"},
-    message="Operation completed",
-    metadata={"timestamp": "2024-02-17"}
-)
-
-# Error response
-return Response.error(
-    error="Something went wrong",
-    status_code=400
-)
-```
+---
 
 ## License
 
-This project is licensed under the Stacksync Connector License (SCL) v1.0.
+This project is licensed under the **Stacksync Connector License (SCL) v1.0**.

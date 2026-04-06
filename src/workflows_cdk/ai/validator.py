@@ -41,6 +41,7 @@ def validate_spec(spec: ConnectorSpec, registry: CapabilityRegistry) -> Validati
     _validate_actions(spec, registry, result)
     _validate_triggers(spec, registry, result)
     _validate_no_route_collisions(spec, result)
+    _validate_stacksync_contracts(spec, result)
 
     return result
 
@@ -78,19 +79,7 @@ def _validate_actions(
                     f"unknown type '{f.type}', defaulting to 'string'"
                 )
 
-        if manifest is not None:
-            known_actions = manifest.action_names()
-            if action.name not in known_actions:
-                result.warnings.append(
-                    f"Action '{action.name}' is not in the {spec.app_type} "
-                    f"capability manifest (known: {', '.join(known_actions)})"
-                )
-
-    if manifest is None and spec.app_type:
-        result.warnings.append(
-            f"App '{spec.app_type}' is not in the built-in registry. "
-            f"The generated connector will work but fields/auth are unverified."
-        )
+        # Registry hints help the LLM but are not a gate for validation.
 
 
 def _validate_triggers(
@@ -106,13 +95,7 @@ def _validate_triggers(
             result.errors.append(f"Duplicate trigger name: '{trigger.name}'")
         seen_names.add(trigger.name)
 
-        if manifest is not None:
-            known_triggers = manifest.trigger_names()
-            if trigger.name not in known_triggers:
-                result.warnings.append(
-                    f"Trigger '{trigger.name}' is not in the {spec.app_type} "
-                    f"capability manifest (known: {', '.join(known_triggers)})"
-                )
+        # Registry hints help the LLM but are not a gate for validation.
 
 
 def _validate_no_route_collisions(
@@ -131,3 +114,43 @@ def _validate_no_route_collisions(
         if path in paths:
             result.errors.append(f"Route collision: {path}")
         paths.add(path)
+
+
+def _validate_stacksync_contracts(
+    spec: ConnectorSpec,
+    result: ValidationResult,
+) -> None:
+    """Stacksync-specific checks that go beyond generic type/name validation."""
+    if spec.auth.type in ("oauth2", "api_key") and not spec.app_type:
+        result.errors.append(
+            "Auth requires a connection but app_type is empty "
+            "(needed for allowed_app_types in schema)"
+        )
+
+    for action in spec.actions:
+        all_fields = list(action.required_fields) + list(action.optional_fields)
+        _check_field_contracts(action.name, all_fields, result)
+
+    for trigger in spec.triggers:
+        _check_field_contracts(trigger.name, list(trigger.payload_fields), result)
+
+
+def _check_field_contracts(
+    module_name: str,
+    fields: list,
+    result: ValidationResult,
+) -> None:
+    all_ids = {f.name for f in fields}
+
+    for f in fields:
+        if f.depends_on and f.depends_on not in all_ids:
+            result.errors.append(
+                f"Module '{module_name}', field '{f.name}': "
+                f"depends_on='{f.depends_on}' references non-existent field"
+            )
+
+        if f.type == "object" and not f.choices and not f.dynamic_content:
+            result.warnings.append(
+                f"Module '{module_name}', field '{f.name}': "
+                f"type 'object' typically needs choices or dynamic_content"
+            )
