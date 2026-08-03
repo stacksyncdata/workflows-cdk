@@ -98,6 +98,53 @@ def find_schema_paths(directory: str) -> list[str]:
     return schema_paths
 
 
+def find_context_paths(directory: str) -> list[str]:
+    """Find context.md file paths without loading content.
+
+    Mirrors ``find_schema_paths``: walks the routes directory and returns the
+    route path of every module that ships a ``context.md``, so a ``/context``
+    route can be auto-registered for it without editing that module's route.py.
+
+    Args:
+        directory: Root directory to search from
+
+    Returns:
+        list[str]: route paths (e.g. ``/create_records/v1``) that have a context file
+    """
+    context_paths = []
+    try:
+        for root, _, files in os.walk(directory):
+            if "context.md" in files:
+                rel_path = os.path.relpath(root, directory)
+                path_parts = rel_path.split(os.sep)
+                path_parts = [part.replace(" ", "_") for part in path_parts]
+                route_path = "/" + "/".join(path_parts)
+                if route_path == "/.":
+                    route_path = ""
+                context_paths.append(route_path)
+    except Exception as e:
+        logging.error(f"Error scanning for context paths: {e}")
+
+    return context_paths
+
+
+def load_context_file(file_path: str) -> str | None:
+    """The raw text of a ``context.md`` file, or ``None`` when it is absent or unreadable.
+
+    Callers return HTTP 404 for ``None`` so a missing ``context.md`` is a proper
+    not-found rather than a silent empty string. Context is static markdown served
+    as-is, read per request so edits show up on the next fetch; the path is derived
+    from the module layout, never from request input.
+    """
+    if not os.path.isfile(file_path):
+        return None
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
 def is_production_environment() -> bool:
     """Check if current environment is production.
 
@@ -696,6 +743,20 @@ class Router:
         def health_check():
             return Response.success(data={"status": "healthy"})
 
+        @app.route("/context", methods=["GET"])
+        def app_context():
+            # App-level context: the connector-root context.md, shared across modules.
+            content = load_context_file(os.path.join(os.getcwd(), "context.md"))
+            if content is None:
+                return Response(
+                    data={
+                        "connector_context": None,
+                        "error": "No connector-level context.md found",
+                    },
+                    status_code=404,
+                )
+            return Response.success(data={"connector_context": content})
+
         @app.route("/app-config", methods=["GET"])
         def app_config():
             try:
@@ -777,6 +838,81 @@ class Router:
             # Register each schema route
             for route_path in schema_paths:
                 self._register_schema_route(route_path, app)
+
+    def register_context_routes(self, app: Flask) -> None:
+        """Auto-register a ``/context`` route for every module that ships a context.md.
+
+        Mirrors ``register_schema_routes`` so a developer only has to drop a
+        ``context.md`` into a module directory; no route.py change is needed.
+        """
+        routes_path = os.path.join(os.getcwd(), self.routes_directory)
+        for route_path in find_context_paths(routes_path):
+            self._register_context_route(route_path, app)
+
+    def _register_context_route(self, route_path: str, app: Flask | None = None) -> None:
+        """Register a GET ``{route_path}/context`` serving that module's context.md.
+
+        Args:
+            route_path: The module route path (e.g. ``/create_records/v1``)
+            app: The Flask app to register with (if None, just adds to routes list)
+        """
+        context_route = f"{route_path}/context"
+        context_file = os.path.join(
+            os.getcwd(), self.routes_directory, route_path.lstrip("/"), "context.md"
+        )
+
+        def view_func(
+            _file: str = context_file, _label: str = route_path.lstrip("/")
+        ) -> Any:
+            content = load_context_file(_file)
+            if content is None:
+                return Response(
+                    data={
+                        "module_context": None,
+                        "error": f"No context.md found for {_label}",
+                    },
+                    status_code=404,
+                )
+            return Response.success(data={"module_context": content})
+
+        route_info = {
+            "path": context_route,
+            "endpoint": f"context_{route_path.replace('/', '_')}",
+            "view_func": view_func,
+            "methods": ["GET"],
+        }
+
+        added = self._add_route_if_not_exists(route_info)
+        if app is not None and added and hasattr(app, "add_url_rule"):
+            app.add_url_rule(
+                route_info["path"],
+                endpoint=route_info["endpoint"],
+                view_func=route_info["view_func"],
+                methods=route_info["methods"],
+            )
+            if self.environment in ["dev", "development"]:
+                print(f"Registered context route: {route_info['path']}")
+
+    def _handle_dynamic_context_request(self, dynamic_path: str) -> FlaskResponse:
+        """Serve a module's context.md for a ``/context`` path not explicitly registered.
+
+        Mirrors ``_handle_dynamic_schema_request``. A module without a context.md
+        reaches here instead of a stack-trace 404: it returns a clean HTTP 404 JSON
+        body (``module_context: null`` + error) so a missing file is a known state.
+        """
+        context_file = os.path.join(
+            os.getcwd(), self.routes_directory, dynamic_path, "context.md"
+        )
+        content = load_context_file(context_file)
+        if content is None:
+            return Response(
+                data={
+                    "module_context": None,
+                    "error": f"No context.md found for {dynamic_path}",
+                },
+                status_code=404,
+            )
+        return Response.success(data={"module_context": content})
 
     def _handle_dynamic_schema_request(self, dynamic_path: str) -> FlaskResponse:
         """Handle schema requests for paths that might not have been registered at startup.
@@ -959,6 +1095,9 @@ class Router:
         # Register schema routes
         self.register_schema_routes(app)
 
+        # Register a /context route for every module that ships a context.md
+        self.register_context_routes(app)
+
         # Register a catch-all route for dynamic schema discovery
         # This will handle any schema requests for paths that don't have explicit routes
         app.add_url_rule(
@@ -966,6 +1105,15 @@ class Router:
             endpoint="dynamic_schema_handler",
             view_func=self._handle_dynamic_schema_request,
             methods=["GET", "POST"],
+        )
+
+        # Catch-all so a module without a context.md returns a clean 404 (not a
+        # stack-trace 404) for its /context path.
+        app.add_url_rule(
+            "/<path:dynamic_path>/context",
+            endpoint="dynamic_context_handler",
+            view_func=self._handle_dynamic_context_request,
+            methods=["GET"],
         )
 
         # Register error handlers
