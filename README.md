@@ -12,8 +12,10 @@ A powerful CDK (Connector Development Kit) for building Stacksync Workflows Conn
 
 ## Installation
 
+This package is not currently published on PyPI. Install directly from the repo:
+
 ```bash
-pip install workflows-cdk
+pip install git+https://github.com/stacksyncdata/workflows-cdk.git
 ```
 
 ## Quick Start
@@ -28,7 +30,7 @@ cd my-workflow-connector
 2. Install the required dependencies:
 
 ```bash
-pip install workflows-cdk flask pyyaml
+pip install git+https://github.com/stacksyncdata/workflows-cdk.git flask pyyaml
 ```
 
 3. Create the basic project structure:
@@ -207,4 +209,4 @@ return Response.error(
 
 ## License
 
-This project is licensed under the Stacksync Connector License (SCL) v1.0.
+This project is licensed under the [Stacksync Source Available License 1.0](./LICENSE).
