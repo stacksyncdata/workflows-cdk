@@ -927,6 +927,12 @@ class Router:
             FlaskResponse: The schema response
         """
         try:
+            # Consume the request body before answering. The schema comes from a file, so nothing
+            # below reads the body; without this, gunicorn closes the socket with the unread bytes
+            # still queued, the kernel answers with a TCP reset, and Cloud Run turns that into a
+            # 502 for any POST larger than one 8 KB socket read.
+            flask_request.get_data(cache=False)
+
             # Construct the full path to the schema file
             current_working_directory = os.getcwd()
             routes_directory = os.path.join(
@@ -994,6 +1000,9 @@ class Router:
 
         def dynamic_schema_handler() -> FlaskResponse:
             try:
+                # Consume the request body before answering (see _handle_dynamic_schema_request).
+                flask_request.get_data(cache=False)
+
                 # Get absolute path to schema file
                 current_working_directory = os.getcwd()
                 routes_directory = os.path.join(
