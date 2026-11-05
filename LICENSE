@@ -1,0 +1,135 @@
+Stacksync Connector Development Kit License
+Stacksync Source Available License 1.0
+
+Licensor: Stacksync, Inc.
+
+Licensed Work: Stacksync Connector Development Kit (CDK)
+
+The Licensed Work is © 2025 Stacksync, Inc.
+
+The current and authoritative version of this Agreement is published at, and may be
+updated from time to time at:
+https://docs.stacksync.com/security-and-other-resources/legal/stacksync-connector-development-kit-license
+
+Definitions
+"Agreement" means this Stacksync Source Available License 1.0.
+
+"Benchmark" means any benchmark, comparative test, or performance evaluation of the Software.
+
+"Contribution" means any work of authorship, including code, documentation, or other material, intentionally submitted by You to Licensor for inclusion in the Licensed Work.
+
+"License" means a valid authorization for use of the Software that is granted or provisioned by Licensor.
+
+"Licensed Work" or "Software" means the Stacksync Connector Development Kit (CDK) provided to You under this Agreement, including any portion thereof, in any form.
+
+"Licensor" means Stacksync, Inc.
+
+"Limited Non-Production Use" means use solely for design, prototyping, testing, development, or evaluation purposes in non-production environments.
+
+"Modified Version" means any derivative work of the Software that uses all or a substantial portion of the source code of the Software.
+
+"Protective Measures" means technical countermeasures, Telemetry requirements, License requirements, or other elements in the Software or Modified Versions designed to enforce the terms of this Agreement.
+
+"Stacksync Marketplace" means the official Stacksync integration marketplace, partner directory, or any distribution channel expressly authorized in writing by Stacksync, Inc.
+
+"Telemetry" means data about Your use of the Software and its features that is communicated to Licensor by the Software.
+
+"Third-Party Software" means software made available under open source or other license terms that may be included in or provided with the Software.
+
+"You" means the individual or entity agreeing to this Agreement. If You are acting on behalf of an entity, "You" refers to that entity.
+
+Acceptance
+This Agreement sets forth the terms and conditions on which Licensor makes the Software available to You. By accessing or using the Software or a Modified Version in any manner, You agree to be bound by all the terms and conditions of this Agreement. If You are an individual accessing or using the Software or a Modified Version on behalf of a legal entity, (i) You represent and warrant that You have the authority to enter into this Agreement on behalf of such entity and bind such entity to this Agreement, and (ii) references to "You" in this Agreement will refer to such entity.
+
+Grant of Rights
+The Licensor hereby grants You the right to copy, modify, and make non-production use of the Licensed Work.
+
+Additional Use Grant
+You may make production use of the Licensed Work, provided Your use does not include:
+
+Competing Services. Offering the Licensed Work, or any functionality derived from it, to third parties as a hosted or managed integration, synchronization, or data connectivity service.
+
+Competing Products. Using the Licensed Work to provide, either directly or as part of a larger offering:
+  - Integration platform as a service (iPaaS)
+  - Embedded iPaaS
+  - Unified API products
+  - Data integration or ETL/ELT platforms
+  - Workflow automation platforms where data synchronization between third-party systems is a primary function
+  - API management or API proxy services
+
+Resale or Repackaging. Incorporating the Licensed Work into a product or service that facilitates automated data movement between third-party business systems as its primary function, and offering such product or service commercially or for free to third parties.
+
+Permitted Uses
+For clarity, the following uses are expressly permitted under this Agreement:
+
+  - Using the Licensed Work to build integrations for Your own internal business systems
+  - Using the Licensed Work to connect Your applications to Stacksync services
+  - Providing consulting, implementation, or professional services that deploy or configure the Licensed Work for clients, provided such services do not include offering a competing product or service as defined above
+  - Using the Licensed Work for development, testing, educational, or evaluation purposes
+  - Creating derivative works for internal use that do not compete with Stacksync products
+  - Building, distributing, and commercializing integrations, connectors, or extensions through the Stacksync Marketplace or other Stacksync-authorized distribution channels
+
+The rights granted herein are non-exclusive, non-sublicensable, and non-transferable, except that You may permit Your employees, contractors, and agents to use the Licensed Work on Your behalf, provided they are bound by terms at least as protective as this Agreement.
+
+Conditions
+If Your use of the Licensed Work does not comply with the requirements currently in effect as described in this Agreement, You must either:
+
+  - Purchase a commercial license from the Licensor, its affiliated entities, or authorized resellers, or
+  - Refrain from using the Licensed Work.
+
+All copies of the original and modified Licensed Work, and derivative works of the Licensed Work, are subject to this Agreement. You must conspicuously display this Agreement on each original or modified copy of the Licensed Work. If You receive the Licensed Work in original or modified form from a third party, the terms and conditions set forth in this Agreement apply to Your use of that work.
+
+Limitations and Obligations
+You will not operate the Software or a Modified Version without a License except for Limited Non-Production Use. You agree to adhere to any limitations specified by Licensor regarding use of the License at the time it is provided to You. You represent and warrant that all information You provide to Licensor to obtain a License is complete and accurate at the time of submission. You will not share Your License with any third parties, other than Your affiliates, contractors, and agents who are obligated to keep it confidential and use it solely on Your behalf. You will ensure that such affiliates, contractors, and agents comply with the terms of this Agreement applicable to You, and You will be responsible for their acts and omissions as if they were You hereunder. You acknowledge that the Software and any Modified Versions may be subject to export or import control laws and regulations in the US and other countries, and You agree to comply with all such laws and regulations.
+
+You acknowledge that the Software and any Modified Versions share Telemetry with Licensor. You will not operate the Software or a Modified Version without sharing Telemetry except for Limited Non-Production Use or unless Licensor has issued You a License that allows Telemetry to be disabled and You disable sharing Telemetry. You understand and agree that Licensor may use and disclose personal information collected as part of Telemetry in accordance with Licensor's Privacy Policy available at https://docs.stacksync.com/privacy. You acknowledge that the Software and Modified Versions include technical countermeasures to limit unauthorized use, such as operation without a required License or without sending required Telemetry. You will not circumvent, remove, disable, block, or alter any Protective Measures. You must include all of the Protective Measures in any Modified Version You create.
+
+You will not alter, remove, or obscure any licensing, copyright, trademark, or other notices of Licensor in the Software or a Modified Version. You must ensure that anyone who receives a copy of any part of the Software or a Modified Version from You also receives a copy of this Agreement, and if You create a Modified Version, You must include in any such Modified Version prominent notices stating that You have modified the Software.
+
+Benchmarks
+You will not perform Benchmarks against any products or services provided under terms that restrict performing and disclosing the results of benchmarks of such products or services, unless You have the lawful right to waive such terms. If You perform or disclose, or direct or permit any third party to perform or disclose, any Benchmark, You will include in any disclosure and will disclose to Licensor all information necessary to replicate such Benchmark, and You agree that Licensor may perform and disclose the results of benchmarks of Your products or services, irrespective of any restrictions on benchmarks in the terms governing Your products or services.
+
+Intellectual Property
+This Agreement does not grant You any right in any trademark or logo of Licensor or its affiliates, provided that You may use a trademark or logo of Licensor as expressly required by this Agreement or as reasonably necessary to describe the origin of the Licensed Work.
+
+Patent Grant
+Subject to the terms and conditions of this Agreement, the Licensor hereby grants You a perpetual, worldwide, non-exclusive, no-charge, royalty-free patent license to make, have made, use, offer to sell, sell, import, and otherwise transfer the Licensed Work, where such license applies only to those patent claims licensable by the Licensor that are necessarily infringed by the Licensed Work alone.
+
+If You institute patent litigation against any entity (including a cross-claim or counterclaim in a lawsuit) alleging that the Licensed Work infringes a patent, Your rights under this Agreement will terminate immediately.
+
+Contributions
+By submitting any Contribution for inclusion in the Licensed Work, You hereby assign to Stacksync, Inc. all right, title, and interest in and to such Contribution, including all intellectual property rights therein. You represent that You have the legal authority to make this assignment. If You cannot assign rights (for example, due to employer policies), You must not submit Contributions without first obtaining a written agreement from Stacksync, Inc.
+
+To the extent any rights cannot be assigned under applicable law, You grant Stacksync, Inc. a perpetual, worldwide, exclusive, royalty-free, irrevocable license to use, reproduce, modify, distribute, sublicense, and commercialize such Contribution without restriction.
+
+Any contribution submitted for inclusion in the Licensed Work by You to the Licensor shall be under the terms and conditions of this Agreement, without any additional terms or conditions.
+
+Third-Party Software
+The Software may contain or be provided together with Third-Party Software. Each item of Third-Party Software is subject to its own license terms, which can be found in the documentation accompanying the Software or the source code. Copyrights to the Third-Party Software are held by the respective copyright holders indicated therein. You agree to fully comply with all such Third-Party Software license terms.
+
+Disclaimer of Warranty
+TO THE EXTENT PERMITTED BY APPLICABLE LAW, THE SOFTWARE IS PROVIDED "AS IS" AND WITHOUT ANY REPRESENTATION, WARRANTY, OR CONDITION, EXPRESS OR IMPLIED, INCLUDING WITHOUT LIMITATION ANY REPRESENTATION, WARRANTY, OR CONDITION OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, OR NON-INFRINGEMENT, OR THAT USE OF THE SOFTWARE WILL BE UNINTERRUPTED OR ERROR FREE.
+
+Limitation of Liability
+TO THE EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL THE LICENSOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THE LICENSED WORK, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+IN NO EVENT SHALL LICENSOR'S TOTAL LIABILITY EXCEED ONE HUNDRED US DOLLARS ($100.00).
+
+Termination
+Your rights under this Agreement terminate automatically for the current and all other versions of the Licensed Work if You breach any term of this Agreement. If the breach is curable and You cure it within fifteen (15) days of becoming aware of the breach, Your rights will be reinstated. Intentional or repeated breaches result in immediate and permanent termination with no cure period.
+
+General
+If any provision of this Agreement is held to be unenforceable, such provision shall be reformed only to the extent necessary to make it enforceable. Any failure to enforce any provision of this Agreement will not constitute a waiver of future enforcement of that or any other provision.
+
+This Agreement shall be governed by and construed in accordance with the laws of the State of Delaware, United States, without regard to its conflict of laws principles.
+
+Any legal action or proceeding arising under or relating to this Agreement shall be brought exclusively in the state or federal courts located in Wilmington, Delaware, and the parties hereby irrevocably consent to the personal jurisdiction and venue of such courts.
+
+The rights and obligations of the parties to this Agreement will not be governed by the United Nations Convention on Contracts for the International Sale of Goods.
+
+Contact
+For commercial licensing inquiries, please contact: licensing@stacksync.com
+
+Stacksync Source Available License 1.0
+
+© 2025 Stacksync, Inc. All Rights Reserved.
