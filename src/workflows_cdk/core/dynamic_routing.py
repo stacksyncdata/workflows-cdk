@@ -22,6 +22,7 @@ from .sentry import init_sentry
 from .validation import validate_request
 from .module_metadata import generate_module_metadata
 from .get_environment import get_environment
+from .module_authentication import ModuleAuthenticator
 import sentry_sdk
 import traceback
 from .homepage_template import get_homepage_template
@@ -991,6 +992,9 @@ class Router:
 
         # Register error handlers
         self.register_error_handlers(app)
+
+        # Check the token of the calls to the module routes (off unless the connector's settings turn it on)
+        self.register_module_authentication(app)
         
         # Register core routes
         self._register_core_routes(app)
@@ -1006,6 +1010,28 @@ class Router:
             )
             if self.environment in ["dev", "development"]:
                 print(f"Registered route: {route['path']} with methods {route['methods']}")
+
+    def register_module_authentication(self, app: Flask) -> None:
+        """Check the workflows modules token of each call to a route this router registered.
+
+        The module routes and their schema routes are checked; the core routes (/, /health, /app-config,
+        /modules-list, /routes) and any route the connector adds on the Flask app itself are not.
+        """
+        module_authenticator = ModuleAuthenticator()
+        logging.getLogger(__name__).info(f"Module authentication mode: {module_authenticator.mode}")
+        if module_authenticator.mode == "off":
+            return
+
+        @app.before_request
+        def check_module_route_token():
+            if flask_request.method == "OPTIONS":
+                return None
+            is_module_route = flask_request.endpoint == "dynamic_schema_handler" or any(
+                route["endpoint"] == flask_request.endpoint for route in self.routes
+            )
+            if not is_module_route:
+                return None
+            return module_authenticator.check_request()
 
     def route(self, rule: Optional[str] = None, **options: Any) -> Callable:
         """

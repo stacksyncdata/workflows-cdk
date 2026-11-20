@@ -21,7 +21,8 @@ setup(
         "gunicorn==22.0.0",
         "sentry-sdk[Flask]",
         "pydantic>=2.0.0",
-        "pyyaml>=6.0.0"
+        "pyyaml>=6.0.0",
+        "authlib"
     ],
     python_requires=">=3.10",
     packages=find_packages(where="src"),
