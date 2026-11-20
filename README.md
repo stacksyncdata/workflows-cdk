@@ -164,7 +164,7 @@ and other router routes) gets without a valid token:
 - `log`: the call runs and is logged;
 - `enforce`: the call is refused with 401 (503 when Auth0's keys cannot be fetched).
 
-The core routes (`/`, `/health`, `/app-config`, `/modules-list`, `/routes`) and routes added on the Flask app itself are
+The core routes (`/`, `/health`, `/app-config`, `/modules-list`, `/routes`), the `context.md` documents (`/context`) and routes added on the Flask app itself are
 never checked. The mode, `WORKFLOWS_MODULES_AUTH0_DOMAIN` and `WORKFLOWS_MODULES_AUTH0_AUDIENCE` (defaulting to the
 environment's workflows modules API) are read from the environment, then from
 `environment_variables/regional/variables_<ENVIRONMENT>_<REGION>.env`, once at start.

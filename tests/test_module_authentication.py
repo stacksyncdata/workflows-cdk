@@ -24,7 +24,7 @@ AUTH0_AUDIENCE = "https://workflows-modules-prod/api"
 SIGNING_KEY = JsonWebKey.generate_key("RSA", 2048, is_private=True, options={"kid": "signing-key"})
 OTHER_KEY = JsonWebKey.generate_key("RSA", 2048, is_private=True, options={"kid": "other-key"})
 MODULE_ROUTES = [("POST", "/greet/v1/execute"), ("POST", "/greet/v1/content"), ("GET", "/greet/v1/schema"), ("POST", "/greet/v1/schema")]
-CORE_ROUTES = ["/", "/health", "/app-config", "/modules-list", "/routes"]
+CORE_ROUTES = ["/", "/health", "/app-config", "/modules-list", "/routes", "/context", "/greet/v1/context"]
 
 ROUTE_FILE = """
 from flask import jsonify
@@ -61,6 +61,7 @@ def connector_directory(tmp_path, monkeypatch):
     module_directory.mkdir(parents=True)
     (module_directory / "route.py").write_text(textwrap.dedent(ROUTE_FILE))
     (module_directory / "schema.json").write_text(json.dumps({"fields": []}))
+    (module_directory / "context.md").write_text("# Greet\n")
     monkeypatch.chdir(tmp_path)
     monkeypatch.syspath_prepend(str(tmp_path))
     for name in ("ENVIRONMENT", "REGION", "WORKFLOWS_MODULES_AUTH_MODE", "WORKFLOWS_MODULES_AUTH0_DOMAIN", "WORKFLOWS_MODULES_AUTH0_AUDIENCE"):

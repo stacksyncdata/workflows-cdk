@@ -1015,7 +1015,8 @@ class Router:
         """Check the workflows modules token of each call to a route this router registered.
 
         The module routes and their schema routes are checked; the core routes (/, /health, /app-config,
-        /modules-list, /routes) and any route the connector adds on the Flask app itself are not.
+        /modules-list, /routes), the context.md documents (/context) and any route the connector adds on the Flask
+        app itself are not.
         """
         module_authenticator = ModuleAuthenticator()
         logging.getLogger(__name__).info(f"Module authentication mode: {module_authenticator.mode}")
@@ -1024,7 +1025,7 @@ class Router:
 
         @app.before_request
         def check_module_route_token():
-            if flask_request.method == "OPTIONS":
+            if flask_request.method == "OPTIONS" or (flask_request.endpoint or "").startswith("context_"):
                 return None
             is_module_route = flask_request.endpoint == "dynamic_schema_handler" or any(
                 route["endpoint"] == flask_request.endpoint for route in self.routes
