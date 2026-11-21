@@ -368,3 +368,29 @@ def test_the_catch_all_schema_route_never_reads_a_schema_outside_the_routes_dire
 
     assert response.status_code == 404
     assert "outside the routes directory" not in response.get_data(as_text=True)
+
+
+def test_cached_keys_stop_verifying_a_day_after_the_last_successful_fetch(connector_directory, monkeypatch):
+    # ZeroPath on #11: during a long Auth0 outage a key Auth0 retired (a leaked one) would keep verifying tokens
+    authenticator = ModuleAuthenticator({})
+    attempts = []
+
+    def fetch_once_then_fail(self):
+        attempts.append(1)
+        if len(attempts) > 1:
+            raise OSError("Auth0 unreachable")
+        return {"keys": [SIGNING_KEY.as_dict(is_private=False)]}
+
+    monkeypatch.setattr(ModuleAuthenticator, "fetch_key_set_document", fetch_once_then_fail)
+    authenticator.verify_token(mint_token())
+
+    # an hour into the outage the cached keys still verify
+    authenticator.key_set_fetched_at -= 3600
+    authenticator.key_set_attempted_at -= module_authentication.JWKS_REFETCH_INTERVAL_SECONDS + 1
+    authenticator.verify_token(mint_token())
+
+    # past a day without a successful fetch they no longer do
+    authenticator.key_set_fetched_at -= module_authentication.JWKS_MAX_STALE_SECONDS
+    authenticator.key_set_attempted_at -= module_authentication.JWKS_REFETCH_INTERVAL_SECONDS + 1
+    with pytest.raises(module_authentication.VerificationUnavailableError):
+        authenticator.verify_token(mint_token())

@@ -48,6 +48,9 @@ JWKS_LIFETIME_SECONDS = 600
 # an unknown key id refetches the key set at most this often, so forged tokens cannot make each call fetch it
 JWKS_REFETCH_INTERVAL_SECONDS = 60
 JWKS_FETCH_TIMEOUT_SECONDS = 5
+# while Auth0 cannot be reached the last key set keeps verifying, but not longer than this: a key Auth0 retired in
+# the meantime (a leaked one) must not verify tokens for the whole outage
+JWKS_MAX_STALE_SECONDS = 24 * 60 * 60
 CLOCK_LEEWAY_SECONDS = 60
 
 
@@ -163,6 +166,8 @@ class ModuleAuthenticator:
                     logger.warning(f"Module authentication: Auth0's key set could not be refreshed: {error}")
             if self.key_set is None:
                 raise VerificationUnavailableError("Auth0's key set could not be fetched; the next attempt waits out the interval")
+            if time.monotonic() - self.key_set_fetched_at > JWKS_MAX_STALE_SECONDS:
+                raise VerificationUnavailableError("Auth0's key set has not been refreshed for a day; cached keys are no longer used")
             return self.key_set
 
     def verify_token(self, token: str) -> None:
