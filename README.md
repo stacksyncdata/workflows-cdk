@@ -154,6 +154,21 @@ my-workflow-connector/
             └── schema.json
 ```
 
+## Module Route Authentication
+
+Stacksync's services call a managed connector with the workflows modules token (`Authorization: Bearer <token>`, an
+Auth0 RS256 JWT). `WORKFLOWS_MODULES_AUTH_MODE` says what a call to a module route (its `execute`, `content`, `schema`
+and other router routes) gets without a valid token:
+
+- `off` (default): nothing is checked;
+- `log`: the call runs and is logged;
+- `enforce`: the call is refused with 401 (503 when Auth0's keys cannot be fetched).
+
+The core routes (`/`, `/health`, `/app-config`, `/modules-list`, `/routes`), the `context.md` documents (`/context`) and routes added on the Flask app itself are
+never checked. The mode, `WORKFLOWS_MODULES_AUTH0_DOMAIN` and `WORKFLOWS_MODULES_AUTH0_AUDIENCE` (defaulting to the
+environment's workflows modules API) are read from the environment, then from
+`environment_variables/regional/variables_<ENVIRONMENT>_<REGION>.env`, once at start.
+
 ## Error Handling
 
 The CDK provides comprehensive error handling:

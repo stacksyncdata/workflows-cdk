@@ -22,6 +22,7 @@ from .sentry import init_sentry
 from .validation import validate_request
 from .module_metadata import generate_module_metadata
 from .get_environment import get_environment
+from .module_authentication import ModuleAuthenticator
 import sentry_sdk
 import traceback
 from .homepage_template import get_homepage_template
@@ -242,6 +243,8 @@ class Router:
         """
         # List to store all discovered routes
         self.routes: List[Dict[str, Any]] = []
+        # The endpoints serving a module's context.md: documents, open like /app-config
+        self.context_endpoints: set = set()
         # List to store module metadata
         self.modules_list: List[Dict[str, Any]] = []
         # Flask application instance
@@ -774,6 +777,7 @@ class Router:
             "view_func": view_func,
             "methods": ["GET"]
         }
+        self.context_endpoints.add(route_info["endpoint"])
 
         added = self._add_route_if_not_exists(route_info)
         if app is not None and added and hasattr(app, "add_url_rule"):
@@ -822,11 +826,13 @@ class Router:
 
             # Construct the full path to the schema file
             current_working_directory = os.getcwd()
-            routes_directory = os.path.join(current_working_directory, self.routes_directory)
-            schema_file_path = os.path.join(routes_directory, dynamic_path, 'schema.json')
-            
+            routes_directory = os.path.realpath(os.path.join(current_working_directory, self.routes_directory))
+            schema_file_path = os.path.realpath(os.path.join(routes_directory, dynamic_path, 'schema.json'))
+            # A path climbing out of the routes directory ("..", an absolute path, a symlink) is not a module
+            is_inside_routes_directory = os.path.commonpath([routes_directory, schema_file_path]) == routes_directory
+
             # Check if the schema file exists
-            if not os.path.exists(schema_file_path):
+            if not is_inside_routes_directory or not os.path.exists(schema_file_path):
                 return Response(
                     data={"schema": {}, "error": f"Schema not found for {dynamic_path}"}, 
                     status_code=404
@@ -991,6 +997,9 @@ class Router:
 
         # Register error handlers
         self.register_error_handlers(app)
+
+        # Check the token of the calls to the module routes (off unless the connector's settings turn it on)
+        self.register_module_authentication(app)
         
         # Register core routes
         self._register_core_routes(app)
@@ -1006,6 +1015,29 @@ class Router:
             )
             if self.environment in ["dev", "development"]:
                 print(f"Registered route: {route['path']} with methods {route['methods']}")
+
+    def register_module_authentication(self, app: Flask) -> None:
+        """Check the workflows modules token of each call to a route this router registered.
+
+        The module routes and their schema routes are checked; the core routes (/, /health, /app-config,
+        /modules-list, /routes), the context.md documents (/context) and any route the connector adds on the Flask
+        app itself are not.
+        """
+        module_authenticator = ModuleAuthenticator()
+        logging.getLogger(__name__).info(f"Module authentication mode: {module_authenticator.mode}")
+        if module_authenticator.mode == "off":
+            return
+
+        @app.before_request
+        def check_module_route_token():
+            if flask_request.method == "OPTIONS" or flask_request.endpoint in self.context_endpoints:
+                return None
+            is_module_route = flask_request.endpoint == "dynamic_schema_handler" or any(
+                route["endpoint"] == flask_request.endpoint for route in self.routes
+            )
+            if not is_module_route:
+                return None
+            return module_authenticator.check_request()
 
     def route(self, rule: Optional[str] = None, **options: Any) -> Callable:
         """
