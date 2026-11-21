@@ -80,6 +80,20 @@ def read_regional_variables() -> Dict[str, Optional[str]]:
         return {}
 
 
+def drain_request_body() -> None:
+    """
+    Read and drop the current request's body before a refusal is answered.
+
+    The refusal is sent before the route reads the body; with bytes still unread, gunicorn's sync worker closes the
+    socket, the kernel answers with a TCP reset and Cloud Run reports a 502 instead of the 401 or 503.
+    """
+    try:
+        while request.stream.read(64 * 1024):
+            pass
+    except Exception as error:
+        logger.warning(f"Module authentication: the refused request's body could not be read: {error}")
+
+
 class ModuleAuthenticator:
     """Checks the workflows modules token of a call, with the mode and Auth0 settings read once at start."""
 
@@ -101,6 +115,7 @@ class ModuleAuthenticator:
         self.auth0_audience = settings.get(AUTH0_AUDIENCE_SETTING_NAME) or default_audience
         self.key_set = None
         self.key_set_fetched_at = 0.0
+        self.key_set_attempted_at = None
         self.key_set_lock = threading.Lock()
 
     def fetch_key_set_document(self) -> dict:
@@ -130,9 +145,14 @@ class ModuleAuthenticator:
         from authlib.jose import JsonWebKey
 
         with self.key_set_lock:
-            age = time.monotonic() - self.key_set_fetched_at
+            now = time.monotonic()
+            age = now - self.key_set_fetched_at
             is_stale = self.key_set is None or age > JWKS_LIFETIME_SECONDS or (refetch and age > JWKS_REFETCH_INTERVAL_SECONDS)
-            if is_stale:
+            # Every attempt, failed ones too, waits out the interval: an unreachable Auth0 must not make each call
+            # wait for a fetch while the cached keys still verify
+            may_attempt = self.key_set_attempted_at is None or now - self.key_set_attempted_at >= JWKS_REFETCH_INTERVAL_SECONDS
+            if is_stale and may_attempt:
+                self.key_set_attempted_at = now
                 try:
                     self.key_set = JsonWebKey.import_key_set(self.fetch_key_set_document())
                     self.key_set_fetched_at = time.monotonic()
@@ -141,6 +161,8 @@ class ModuleAuthenticator:
                         raise VerificationUnavailableError(f"Auth0's key set could not be fetched: {error}") from error
                     # Auth0 unreachable: the last key set stays in use
                     logger.warning(f"Module authentication: Auth0's key set could not be refreshed: {error}")
+            if self.key_set is None:
+                raise VerificationUnavailableError("Auth0's key set could not be fetched; the next attempt waits out the interval")
             return self.key_set
 
     def verify_token(self, token: str) -> None:
@@ -203,6 +225,7 @@ class ModuleAuthenticator:
             )
             if self.mode != ENFORCE_MODE:
                 return None
+            drain_request_body()
             if isinstance(error, VerificationUnavailableError):
                 return jsonify({"error": "Service Unavailable", "message": "The caller's token could not be verified"}), 503
             return jsonify({"error": "Unauthorized", "message": "A valid Stacksync token is required"}), 401, {"WWW-Authenticate": "Bearer"}

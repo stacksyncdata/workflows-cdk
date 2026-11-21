@@ -5,6 +5,7 @@ A small connector is built in a temporary directory (one module with execute, co
 the connector adds on its Flask app) and served by the real Router. Auth0's key set is replaced by a key generated
 here, so the tokens are real RS256 JWTs verified by authlib.
 """
+import io
 import json
 import logging
 import sys
@@ -229,3 +230,141 @@ def test_each_environment_verifies_its_own_modules_api(connector_directory, monk
     authenticator = ModuleAuthenticator({})
 
     assert (authenticator.auth0_domain, authenticator.auth0_audience) == (domain, audience)
+
+
+def add_module(connector_directory, name):
+    module_directory = connector_directory.path / "src" / "modules" / name / "v1"
+    module_directory.mkdir(parents=True)
+    (module_directory / "route.py").write_text(textwrap.dedent(ROUTE_FILE))
+    (module_directory / "schema.json").write_text(json.dumps({"fields": []}))
+
+
+def test_a_module_named_like_a_context_route_is_still_checked(connector_directory, monkeypatch):
+    # only the generated context.md routes are open; a module directory starting with context_ is a module
+    monkeypatch.setenv("WORKFLOWS_MODULES_AUTH_MODE", "enforce")
+    add_module(connector_directory, "context_search")
+    client, _ = build_connector()
+
+    for method, path in [("POST", "/context_search/v1/execute"), ("POST", "/context_search/v1/content"), ("POST", "/context_search/v1/schema")]:
+        assert call(client, method, path).status_code == 401, path
+    assert call(client, "POST", "/context_search/v1/execute", token=mint_token()).status_code == 200
+    assert client.get("/greet/v1/context").status_code != 401
+
+
+def test_a_failed_refresh_is_retried_at_most_once_a_minute_and_the_cached_keys_keep_verifying(connector_directory, monkeypatch):
+    authenticator = ModuleAuthenticator({})
+    attempts = []
+
+    def fetch_once_then_fail(self):
+        attempts.append(time.monotonic())
+        if len(attempts) > 1:
+            raise OSError("Auth0 unreachable")
+        return {"keys": [SIGNING_KEY.as_dict(is_private=False)]}
+
+    monkeypatch.setattr(ModuleAuthenticator, "fetch_key_set_document", fetch_once_then_fail)
+    authenticator.verify_token(mint_token())
+    # the cached keys are older than their lifetime and the last attempt was over a minute ago
+    authenticator.key_set_fetched_at -= module_authentication.JWKS_LIFETIME_SECONDS + 1
+    authenticator.key_set_attempted_at -= module_authentication.JWKS_REFETCH_INTERVAL_SECONDS + 1
+
+    for _ in range(5):
+        authenticator.verify_token(mint_token())
+
+    assert len(attempts) == 2
+
+
+def test_an_unreachable_auth0_is_asked_at_most_once_a_minute_when_nothing_is_cached(connector_directory, monkeypatch):
+    monkeypatch.setenv("WORKFLOWS_MODULES_AUTH_MODE", "enforce")
+    attempts = []
+
+    def unreachable(self):
+        attempts.append(1)
+        raise OSError("Auth0 unreachable")
+
+    monkeypatch.setattr(ModuleAuthenticator, "fetch_key_set_document", unreachable)
+    client, _ = build_connector()
+
+    statuses = [call(client, "POST", "/greet/v1/execute", token=mint_token()).status_code for _ in range(5)]
+
+    assert statuses == [503] * 5
+    assert len(attempts) == 1
+
+
+LARGE_BODY = json.dumps({"data": {"form_data": {}}, "credentials": {"value": "x" * 12000}}).encode()
+
+
+class CountingInput(io.BytesIO):
+    """A wsgi.input that records how many bytes the application read (tests/test_schema_routes_consume_request_body.py)."""
+
+    def __init__(self, payload):
+        super().__init__(payload)
+        self.bytes_read = 0
+
+    def read(self, size=-1):
+        chunk = super().read(size)
+        self.bytes_read += len(chunk)
+        return chunk
+
+    def readline(self, size=-1):
+        chunk = super().readline(size)
+        self.bytes_read += len(chunk)
+        return chunk
+
+
+def post_large_body(app, path, token=None):
+    wsgi_input = CountingInput(LARGE_BODY)
+    captured = {}
+
+    def start_response(status, headers, exc_info=None):
+        captured["status"] = int(status.split()[0])
+
+    environ = {
+        "REQUEST_METHOD": "POST", "PATH_INFO": path, "SERVER_NAME": "localhost", "SERVER_PORT": "80",
+        "SERVER_PROTOCOL": "HTTP/1.1", "CONTENT_TYPE": "application/json", "CONTENT_LENGTH": str(len(LARGE_BODY)),
+        "wsgi.input": wsgi_input, "wsgi.url_scheme": "http", "wsgi.version": (1, 0), "wsgi.errors": io.StringIO(),
+        "wsgi.multithread": False, "wsgi.multiprocess": True, "wsgi.run_once": False,
+    }
+    if token:
+        environ["HTTP_AUTHORIZATION"] = f"Bearer {token}"
+    b"".join(app.wsgi_app(environ, start_response))
+    return captured["status"], wsgi_input
+
+
+@pytest.mark.parametrize("path", ["/greet/v1/execute", "/greet/v1/schema"])
+def test_a_refused_large_post_is_read_whole_so_cloud_run_answers_the_refusal_not_502(connector_directory, monkeypatch, path):
+    monkeypatch.setenv("WORKFLOWS_MODULES_AUTH_MODE", "enforce")
+    _, router = build_connector()
+
+    status, wsgi_input = post_large_body(router.app, path)
+
+    assert status == 401
+    assert wsgi_input.bytes_read == len(LARGE_BODY)
+
+
+def test_a_large_post_refused_with_503_is_read_whole_too(connector_directory, monkeypatch):
+    monkeypatch.setenv("WORKFLOWS_MODULES_AUTH_MODE", "enforce")
+
+    def unreachable(self):
+        raise OSError("Auth0 unreachable")
+
+    monkeypatch.setattr(ModuleAuthenticator, "fetch_key_set_document", unreachable)
+    _, router = build_connector()
+
+    status, wsgi_input = post_large_body(router.app, "/greet/v1/execute", token=mint_token())
+
+    assert status == 503
+    assert wsgi_input.bytes_read == len(LARGE_BODY)
+
+
+@pytest.mark.parametrize("path", ["/../../outside/schema", "/../outside_routes/schema"])
+def test_the_catch_all_schema_route_never_reads_a_schema_outside_the_routes_directory(connector_directory, path):
+    # ZeroPath on PR #11: the dynamic path was joined to the routes directory unchecked
+    for directory in (connector_directory.path / "outside", connector_directory.path / "src" / "outside_routes"):
+        directory.mkdir(parents=True)
+        (directory / "schema.json").write_text(json.dumps({"secret": "outside the routes directory"}))
+    client, _ = build_connector()
+
+    response = client.get(path)
+
+    assert response.status_code == 404
+    assert "outside the routes directory" not in response.get_data(as_text=True)
