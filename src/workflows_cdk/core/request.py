@@ -30,7 +30,9 @@ class Request:
     def json(self) -> dict[str, Any]:
         """Get the cached JSON data from the request."""
         if self._json_data is None:
-            self._json_data = self._request.get_json(silent=True) or {}
+            request_json = self._request.get_json(silent=True)
+            # Only an object body has data/credentials; any other JSON value reads as empty
+            self._json_data = request_json if isinstance(request_json, dict) else {}
         return self._json_data
 
     @property
@@ -49,9 +51,11 @@ class Request:
         Returns:
             dict[str, Any]: The credentials from the request
         """
-        return (
-            self.json.get("credentials", {}).get("connection_data", {}).get("value", {})
-        )
+        # `or {}` on each level: a null level must not raise AttributeError here, because Python
+        # would then fall back to __getattr__ and report "'Request' object has no attribute 'credentials'"
+        credentials = self.json.get("credentials") or {}
+        connection_data = credentials.get("connection_data") or {}
+        return connection_data.get("value") or {}
 
     def __getattr__(self, name: str) -> Any:
         """Delegate any unknown attributes to the underlying Flask request."""
