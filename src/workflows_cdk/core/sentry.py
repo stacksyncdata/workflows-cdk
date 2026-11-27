@@ -4,10 +4,10 @@ Centralized Sentry error handling for the Workflows CDK.
 
 import os
 import traceback
+
 import requests
-from typing import Optional
-from flask import Flask, request, current_app
 import sentry_sdk
+from flask import Flask
 from sentry_sdk.integrations.flask import FlaskIntegration
 
 
@@ -16,12 +16,14 @@ def append_external_request_info(event, hint):
     try:
         exc_info = hint.get("exc_info")
         if exc_info:
-            exception_type, exception_value, _ = exc_info
+            _, exception_value, _ = exc_info
             if isinstance(exception_value, requests.exceptions.RequestException):
-                response = getattr(exception_value, 'response', None)
+                response = getattr(exception_value, "response", None)
                 if response is not None:
                     event.setdefault("extra", {})
-                    event["extra"]["api_url"] = response.url if hasattr(response, 'url') else "Unknown URL"
+                    event["extra"]["api_url"] = (
+                        response.url if hasattr(response, "url") else "Unknown URL"
+                    )
                     event["extra"]["http_status"] = response.status_code
                     event["extra"]["response_body"] = response.text
                     event["extra"]["headers"] = dict(response.headers)
@@ -38,12 +40,14 @@ def append_path_params(event, hint):
         path = request.get("url", "")
         if path:
             # Remove query parameters and protocol
-            path = path.split('?')[0]
-            path = path.split('//')[-1] if '//' in path else path
-            
+            path = path.split("?")[0]
+            path = path.split("//")[-1] if "//" in path else path
+
             # Split path into components
-            path_components = [p for p in path.split('/') if p][2:]  # Skip domain and version
-            
+            path_components = [p for p in path.split("/") if p][
+                2:
+            ]  # Skip domain and version
+
             # URL path to variable name mapping
             url_mapping = {
                 "routes": "route_id",
@@ -53,18 +57,18 @@ def append_path_params(event, hint):
                 "connections": "connection_id",
                 "variables": "variable_id",
             }
-            
+
             # Create path dictionary
             path_dict = {}
             path_components = [c for c in path_components if c != "id"]
-            for i in range(len(path_components)-1):
+            for i in range(len(path_components) - 1):
                 if path_components[i] in url_mapping:
-                    path_dict[url_mapping[path_components[i]]] = path_components[i+1]
-            
+                    path_dict[url_mapping[path_components[i]]] = path_components[i + 1]
+
             # Add path parameters as tags
             for key, value in path_dict.items():
                 event["tags"][key] = value
-                
+
     except Exception as e:
         print(f"Error appending path params: {e}")
     return event
@@ -72,11 +76,11 @@ def append_path_params(event, hint):
 
 def before_send(event, hint):
     """Process and enrich Sentry events before sending.
-    
+
     Args:
         event: The event to be sent to Sentry
         hint: A dictionary of hints about the event
-        
+
     Returns:
         The processed event or None to drop the event
     """
@@ -113,7 +117,11 @@ def before_send(event, hint):
                     # Parse and add query parameters as tags
                     if isinstance(query_string, bytes):
                         query_string = query_string.decode()
-                    query_params = dict(item.split("=") for item in query_string.split("&") if "=" in item)
+                    query_params = dict(
+                        item.split("=")
+                        for item in query_string.split("&")
+                        if "=" in item
+                    )
                     for key, value in query_params.items():
                         event["tags"][f"query_{key}"] = str(value)
                 except Exception:
@@ -122,10 +130,10 @@ def before_send(event, hint):
         # Extract route information from stack frames
         exception = event.get("exception", {})
         values = exception.get("values", [])
-        
+
         for value in values:
             frames = value.get("stacktrace", {}).get("frames", [])
-            
+
             for frame in frames:
                 file_path = str(frame.get("filename", ""))
                 function_name = str(frame.get("function", ""))
@@ -134,32 +142,32 @@ def before_send(event, hint):
                 if "/routes/" in file_path:
                     route_path = file_path.split("/routes/")[1].split(".")[0]
                     event["tags"]["route_path"] = route_path
-                    
+
                 # Extract function information
                 if function_name:
                     event["tags"]["function"] = function_name
-                    
+
                 # Add module information
                 if file_path:
                     event["tags"]["module"] = file_path.split("/")[-1]
 
         # Add external request information
         event = append_external_request_info(event, hint)
-        
+
         # Add path parameters
         event = append_path_params(event, hint)
 
     except Exception as e:
         # Log error but don't block event sending
         print(f"Error in before_send: {e}")
-        
+
     return event
 
 
-def init_sentry(app: Flask, dsn: Optional[str] = None) -> None:
+def init_sentry(app: Flask, dsn: str | None = None) -> None:
     """Initialize Sentry with the given configuration."""
     sentry_dsn = dsn or app.config.get("sentry_dsn")
-    
+
     if not sentry_dsn or not isinstance(sentry_dsn, str):
         app.logger.info("Sentry disabled - no valid DSN")
         return
