@@ -172,10 +172,16 @@ def init_sentry(app: Flask, dsn: str | None = None) -> None:
         app.logger.info("Sentry disabled - no valid DSN")
         return
 
+    environment = os.getenv("ENVIRONMENT")
+    # Only deployed services report: a local run has no ENVIRONMENT and its errors are not incidents
+    if not environment:
+        app.logger.info("Sentry disabled - ENVIRONMENT is not set")
+        return
+
     sentry_sdk.init(
         dsn=sentry_dsn,
         integrations=[FlaskIntegration()],
-        environment=os.getenv("ENVIRONMENT", "development"),
+        environment=environment,
         traces_sample_rate=1.0,
         profiles_sample_rate=1.0,
         before_send=before_send,

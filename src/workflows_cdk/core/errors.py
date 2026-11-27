@@ -1,17 +1,10 @@
 """
-Simplified error handling with automatic logging and Sentry integration.
+Errors shown to the user. A ManagedError is never sent to Sentry: the Router logs it as a
+warning (see wrap_route_handler), because it describes the user's input or connection, not a bug.
 """
 
-import logging
-import traceback  # pyright: ignore[reportUnusedImport]
 from dataclasses import dataclass
 from typing import Any
-
-import sentry_sdk
-
-from .cdk_version import CDK_VERSION
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -78,32 +71,6 @@ class ManagedError(Exception):
     ) -> "ManagedError":
         """Create a server error."""
         return cls(error=error, metadata=metadata, status_code=500)
-
-    def _log_error(self):
-        """Log error locally and to Sentry."""
-        # Log locally with all context
-        logger.error(
-            f"Managed error: {self.error}",
-            extra={"data": self.data, "metadata": self.metadata},
-        )
-
-        # Send to Sentry with full context
-        with sentry_sdk.push_scope() as scope:
-            scope.set_tag("cdk_version", CDK_VERSION)
-
-            # Add data as extras
-            if self.data:
-                scope.set_extra("error_data", self.data)
-
-            # Add metadata as tags and extras
-            if self.metadata:
-                for key, value in self.metadata.items():
-                    if isinstance(value, (str, int, float, bool)):
-                        scope.set_tag(key, value)
-                    else:
-                        scope.set_extra(key, value)
-
-            sentry_sdk.capture_exception(self)
 
     @classmethod
     def service_error(

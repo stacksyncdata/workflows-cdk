@@ -22,7 +22,6 @@ import sentry_sdk
 import yaml
 from flask import Flask
 from flask import Response as FlaskResponse
-from flask import current_app
 from flask import request as flask_request
 from flask_cors import CORS
 
@@ -33,6 +32,8 @@ from .module_metadata import generate_module_metadata
 from .responses import Response
 from .sentry import init_sentry
 from .validation import validate_request
+
+logger = logging.getLogger(__name__)
 
 
 def load_app_config(app_dir: str) -> dict[str, Any]:
@@ -164,37 +165,15 @@ def print_error(message: str) -> None:
         print(message)
 
 
-def log_error_details(
-    app: Flask,
-    error: ManagedError | Exception,
-    is_managed: bool = False,
-) -> str | None:
-    """Centralized error logging function."""
-    tb_string = ""
-
-    # Only capture in Sentry once and handle gracefully
+def capture_unexpected_error(error: Exception) -> None:
+    """Send an unexpected exception (a bug) to Sentry once and, outside prod, print its traceback."""
     try:
         sentry_sdk.capture_exception(error)
     except Exception as sentry_error:
         print_error(f"Error capturing exception in Sentry: {sentry_error}")
 
-    # Only log errors in non-production environments
-    if not is_production_environment():
-        try:
-            exc_info = sys.exc_info()
-            if (
-                exc_info[0] is None
-            ):  # If no current exception context, create one from the error
-                exc_info = (type(error), error, error.__traceback__)
-
-            tb_string = "".join(traceback.format_exception(*exc_info))
-            # Log the full traceback
-            app.logger.error("Traceback: %s", tb_string)
-            print_error(f"Error: {error}")
-        except Exception as log_error:
-            print_error(f"Error during logging: {log_error}")
-
-    return tb_string
+    # print, not a logger: Sentry's LoggingIntegration would turn logger.error into a second event
+    print_error("".join(traceback.format_exception(type(error), error, error.__traceback__)))
 
 
 def wrap_route_handler(handler: Callable) -> Callable:
@@ -218,12 +197,17 @@ def wrap_route_handler(handler: Callable) -> Callable:
             return response
 
         except ManagedError as managed_error:
-            # Log error details and let it propagate to the error handler
-            log_error_details(current_app, managed_error, is_managed=True)
+            # Raised on purpose to show the user a message (missing connection, invalid input,
+            # upstream refusal or quota): not a bug, so it is logged and never sent to Sentry.
+            logger.warning(
+                "Managed error (status %s): %s",
+                managed_error.status_code,
+                managed_error,
+                extra={"metadata": managed_error.metadata},
+            )
             raise
         except ValueError as validation_error:
-            # Log validation error details with specific context
-            log_error_details(current_app, validation_error, is_managed=False)
+            capture_unexpected_error(validation_error)
             # Re-raise as ManagedError to ensure consistent error handling
             raise ManagedError(
                 error=validation_error,
@@ -234,8 +218,8 @@ def wrap_route_handler(handler: Callable) -> Callable:
                 status_code=400,
             ) from validation_error
         except Exception as unhandled_error:
-            # Log unexpected errors and convert to ManagedError
-            log_error_details(current_app, unhandled_error)
+            # Captured here, once: the ManagedError it becomes is not captured again
+            capture_unexpected_error(unhandled_error)
             raise ManagedError(
                 error=f"Internal server error: {str(unhandled_error)}",
                 metadata={
